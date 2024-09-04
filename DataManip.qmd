@@ -14,6 +14,7 @@ library(sf)
 library(rnaturalearth)
 library(ggmap)
 library(mapview)
+library(reshape2)
 ```
 
 ## Prepare Source Folders
@@ -55,14 +56,44 @@ write.table(dat, paste(data.dir, "MBW_data.", max.yr, ".csv", sep=""), sep=",")
 
 ```
 
-#Create Summaries to check data
+#Select data columns
+```{r filter}
+
+dat<-dat %>% select(RouteIdentifier, SurveyAreaIdentifier, SamplingEventIdentifier, ProtocolCode, latitude, longitude, survey_year, survey_month, survey_day, CommonName, species_id, Collector, TimeCollected, TimeObservationsStarted, TimeObservationsEnded, EffortMeasurement1, EffortUnits1, EffortMeasurement3, EffortUnits3, EffortMeasurement4, EffortUnits4, ObservationCount, ObservationDescriptor, ObservationCount2, ObservationDescriptor2, ObservationCount3, ObservationDescriptor3, ObservationCount4, ObservationDescriptor4, ObservationCount5, ObservationDescriptor5, ObservationCount6, ObservationDescriptor6, ObservationCount7, ObservationDescriptor7, ObservationCount8, ObservationDescriptor8, ObservationCount9, ObservationDescriptor9)
+
+```
+
+#Create summaries to check data
 ```{r data check}
 
-#number of unique routes per year
-route.year<-dat %>% group_by(survey_year) %>% summarize(nroute=n_distinct(RouteIdentifier))
+#stop per route per year
+n.stop<-dat %>% group_by(RouteIdentifier, survey_year)%>% summarize(nstops=n_distinct(SurveyAreaIdentifier))
 
-#number of stop per route per year
-stop.year<-dat %>% group_by(RouteIdentifier, survey_year) %>% summarize(nstop=n_distinct(SurveyAreaIdentifier))
+#If the number of stops per route per year is variable it can affect your total count per route. We therefore want to retain this colunm in the main dataframe so that we can include it as `effort` in our analysis
+dat<-left_join(dat, n.stop, by=c("survey_year", "RouteIdentifier"))
+
+#species summaries
+list(unique(dat$CommonName)) #10 target species plus Red Squirrel
+
+#routes per year
+route.year<-dat %>% group_by(survey_year)%>% summarise(nroutes_year = n_distinct(RouteIdentifier)) 
+write.table(route.year, paste(out.dir, "MBW.RouteYear.", max.yr, ".csv", sep=""), sep=",", row.names = FALSE)
+
+#proportion of stop a species was detected
+sp.stop.year<-dat %>% group_by(survey_year, CommonName) %>% summarise(nstops_detected = n_distinct(SurveyAreaIdentifier)) %>% drop_na(CommonName)
+stop.year<-dat %>% group_by(survey_year)%>% summarise(nstops_year = n_distinct(SurveyAreaIdentifier)) 
+write.table(stop.year, paste(out.dir, "MBW.StopYear.", max.yr, ".csv", sep=""), sep=",", row.names = FALSE)
+sp.stop.year<-left_join(sp.stop.year, stop.year, by="survey_year")
+
+prop.sp.year<-sp.stop.year %>% mutate(prop_stop_detected = nstops_detected/nstops_year) %>% select(-nstops_year, -nstops_detected)
+
+#create output table long format for review
+n.stop<-n.stop %>% spread(survey_year, nstops)
+#Write to table for review and verification
+write.table(n.stop, paste(out.dir, "MBW.NB.StopRouteYear.", max.yr, ".csv", sep=""), sep=",", row.names = FALSE)
+
+prop.sp.year<-prop.sp.year %>% spread(survey_year, prop_stop_detected)
+write.table(prop.sp.year, paste(out.dir, "MBW.ProportionStopDetectingSpecies.", max.yr, ".csv", sep=""), sep=",", row.names = FALSE)
 
 ```
 
@@ -94,12 +125,10 @@ while(!is.null(dev.list())) dev.off()#turn off device
 
 ```
 
-#Filter data geographically to locations that have been consistennly sampling over time
+#Filter data geographically to locations that have been consistently sampled over time for trend analysis
 ```{r filter NB}
 
-#Use the RouteIdentifier and search for "NB" using the `grepl` function
-#Also filter by latitute 
-dat_NB<-dat %>% filter(grepl("NB", RouteIdentifier)) %>% filter(latitude<=47.7)
+dat_NB<-dat %>% filter(grepl("NB", RouteIdentifier)) %>% filter(latitude<=47.7) %>% filter(survey_year>=2012)
 
 #the number of years a route was tun
 route.nb <- dat_NB %>% group_by(RouteIdentifier)%>% summarize(nyear=n_distinct(survey_year))
@@ -124,8 +153,85 @@ pdf(paste(plot.dir, "MBW_NB.", max.yr, ".pdf", sep=""),height = 10, width = 8, p
 print(plot_filter)
 
 while(!is.null(dev.list())) dev.off()#turn off device  
+```
+
+#Create summaries specific to the trend area of interest
+
+```{r NB Summary}
+#stop per route per year
+n.stop<-dat_NB %>% group_by(RouteIdentifier, survey_year)%>% summarize(nstops=n_distinct(SurveyAreaIdentifier))
+
+#If the number of stops per route per year is variable it can affect your total count per route. We therefore want to retain this colunm in the main dataframe so that we can include it as `effort` in our analysis
+dat_NB<-left_join(dat_NB, n.stop, by=c("survey_year", "RouteIdentifier"))
+
+#species summaries
+list(unique(dat_NB$CommonName)) #10 target species plus Red Squirrel
+
+#routes per year
+route.year<-dat_NB %>% group_by(survey_year)%>% summarise(nroutes_year = n_distinct(RouteIdentifier)) 
+write.table(route.year, paste(out.dir, "MBW.NB.RouteYear.", max.yr, ".csv", sep=""), sep=",", row.names = FALSE)
+
+#proportion of stop a species was detected
+sp.stop.year<-dat_NB %>% group_by(survey_year, CommonName) %>% summarise(nstops_detected = n_distinct(SurveyAreaIdentifier)) %>% drop_na(CommonName)
+stop.year<-dat_NB %>% group_by(survey_year)%>% summarise(nstops_year = n_distinct(SurveyAreaIdentifier)) 
+write.table(stop.year, paste(out.dir, "MBW.NB.StopYear.", max.yr, ".csv", sep=""), sep=",", row.names = FALSE)
+sp.stop.year<-left_join(sp.stop.year, stop.year, by="survey_year")
+
+prop.sp.year<-sp.stop.year %>% mutate(prop_stop_detected = nstops_detected/nstops_year) %>% select(-nstops_year, -nstops_detected)
+
+#create output table long format for review
+n.stop<-n.stop %>% spread(survey_year, nstops)
+#Write to table for review and verification
+write.table(n.stop, paste(out.dir, "MBW.NB.StopRouteYear.", max.yr, ".csv", sep=""), sep=",", row.names = FALSE)
+
+prop.sp.year<-prop.sp.year %>% spread(survey_year, prop_stop_detected)
+write.table(prop.sp.year, paste(out.dir, "MBW.NB.ProportionStopDetectingSpecies.", max.yr, ".csv", sep=""), sep=",", row.names = FALSE)
 
 ```
 
+#Event dataframe for zero filling
+```{r Events}
 
+events<-dat_NB %>% select(RouteIdentifier, SurveyAreaIdentifier, SamplingEventIdentifier, survey_year, nstops, latitude, longitude) %>%  
+    distinct() %>%
+    ungroup() %>%
+    as.data.frame()
 
+```
+
+#Read in polygon grid used for iCAR spatial analysis
+```{r read grid}
+
+getwd() #get your working directory and replace the one below. Make sure it points to the `Data` folder by adding "/Data" to the end
+Grid<-read_sf(dsn="C:/Users/dethier/Documents/ethier-scripts/HELP/Data", layer="NB50K_New")
+
+#Use the start location of the Route to overlay with grid
+loc<-events %>% separate(SamplingEventIdentifier, c("del1", "del2", "stn"), sep="-", remove=FALSE) %>% dplyr::select(-del1, -del2) #what to isolate the first stop on the route
+loc<-loc %>% filter(stn==1)
+
+##YOU HAVE SEVERAL LAT AND LONG FOR STATION 1 ON A ROUTE. TOOK THE MAX LATITUDE IF DOUBLICATES
+loc<-loc %>% select(RouteIdentifier, latitude, longitude) %>% distinct()  
+loc<-loc %>% group_by(RouteIdentifier) %>% slice(which.max(latitude))
+
+#sf point
+xy<-st_as_sf(loc, coords = c("longitude", "latitude"))
+st_crs(xy)<-"+proj=longlat +datum=NAD83"
+
+newCRS<-st_crs(Grid)
+xy<-st_transform(xy, newCRS)
+intersections<-st_intersects(xy, Grid, sparse = FALSE)
+
+# Get the indices of polygons that contain points
+containing_polygons <- which(rowSums(intersections) > 0)
+
+# Select the polygons that contain the points
+selected_polygons <- Grid[containing_polygons, ]
+
+points_with_ids <- st_join(xy, selected_polygons, join = st_intersects)
+
+#add cell id to point data
+cell_id<-points_with_ids %>% select(RouteIdentifier, KEYWORD) %>% distinct() %>% st_drop_geometry()
+
+loc<-left_join(loc, cell_id, by="RouteIdentifier")
+
+```
