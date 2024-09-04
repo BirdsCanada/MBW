@@ -1,0 +1,131 @@
+---
+title: "DataManip"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Load Libraries
+```{r library}
+library(naturecounts)
+library(tidyverse)
+library(sf)
+library(rnaturalearth)
+library(ggmap)
+library(mapview)
+```
+
+## Prepare Source Folders
+```{r source}
+
+#specify year of analysis
+max.yr<-2024
+#specify your naturecounts usename
+user<-"dethier"
+
+# Create folders as necessary
+if(!dir.exists("Data")) dir.create("Data")
+if(!dir.exists("Output")) dir.create("Output")
+if(!dir.exists("Plots")) dir.create("Plots")
+
+# set output directory for analysis files; create if not already there
+out.dir <- paste("./Output/", max.yr, "/", sep = "")
+dir.create(out.dir, showWarnings=FALSE, recursive=TRUE)
+
+# set data directory for analysis files; create if not already there
+data.dir <- paste("./Data/", max.yr, "/", sep = "")
+dir.create(data.dir, showWarnings=FALSE, recursive=TRUE)
+
+# set data directory for analysis files; create if not already there
+plot.dir <- paste("./Plots/", max.yr, "/", sep = "")
+dir.create(plot.dir, showWarnings=FALSE, recursive=TRUE)
+
+```
+
+#Download data from NatureCounts
+```{r data download}
+
+collection<-meta_collections()
+
+dat<-nc_data_dl(collections ="MBW", fields_set = "extended", username = user, info="analysis for HELP data internal")
+
+#save a copy to data folder
+write.table(dat, paste(data.dir, "MBW_data.", max.yr, ".csv", sep=""), sep=",")
+
+```
+
+#Create Summaries to check data
+```{r data check}
+
+#number of unique routes per year
+route.year<-dat %>% group_by(survey_year) %>% summarize(nroute=n_distinct(RouteIdentifier))
+
+#number of stop per route per year
+stop.year<-dat %>% group_by(RouteIdentifier, survey_year) %>% summarize(nstop=n_distinct(SurveyAreaIdentifier))
+
+```
+
+#Create map to check spatial and temporal spread of data
+```{r map}
+
+register_stadiamaps("1cdeb586-3f5a-4ef9-813b-02375efa9f21") 
+
+plot.data<-dat %>% select(RouteIdentifier, survey_year, latitude, longitude) %>% distinct() 
+
+#Create a spatial dataframe
+plot.data<-na.omit(plot.data) #removed missing data
+plot_sf <- st_as_sf(plot.data, coords = c("longitude", "latitude"), crs = 4326)
+
+#Create the base layer map
+#map <- get_stadiamap(bbox = as.numeric(st_bbox(plot_sf)), zoom = 10)
+st_bbox(plot_sf) # to get size of bounding box
+map <- get_stadiamap(bbox = c(left=-68.5, bottom=46, right=-60, top=48), zoom=10)
+
+#Create a new plot for each year
+plot<-ggmap(map) +
+  geom_point(data = plot.data, aes(x = longitude, y = latitude))+
+  facet_wrap( ~ survey_year, ncol=5)
+
+pdf(paste(plot.dir, "MBW.", max.yr, ".pdf", sep=""),height = 10, width = 8, paper = "legal")
+print(plot)
+
+while(!is.null(dev.list())) dev.off()#turn off device  
+
+```
+
+#Filter data geographically to locations that have been consistennly sampling over time
+```{r filter NB}
+
+#Use the RouteIdentifier and search for "NB" using the `grepl` function
+#Also filter by latitute 
+dat_NB<-dat %>% filter(grepl("NB", RouteIdentifier)) %>% filter(latitude<=47.7)
+
+#the number of years a route was tun
+route.nb <- dat_NB %>% group_by(RouteIdentifier)%>% summarize(nyear=n_distinct(survey_year))
+
+#merge back with dataframe
+dat_NB<-left_join(dat_NB, route.nb, by="RouteIdentifier")
+
+#Create new plot the check that it worked
+plot.NB<-dat_NB %>% select(RouteIdentifier, survey_year, latitude, longitude, nyear) %>% distinct() 
+
+#Create a spatial dataframe
+plot.NB<-na.omit(plot.NB) #removed missing data
+plot_sf <- st_as_sf(plot.NB, coords = c("longitude", "latitude"), crs = 4326)
+map <- get_stadiamap(bbox = as.numeric(st_bbox(plot_sf)), zoom = 10)
+
+#Create a new plot for each year
+plot_filter<-ggmap(map) +
+  geom_point(data = plot.NB, aes(x = longitude, y = latitude, size=nyear))+
+  facet_wrap( ~ survey_year, ncol=5)
+
+pdf(paste(plot.dir, "MBW_NB.", max.yr, ".pdf", sep=""),height = 10, width = 8, paper = "legal")
+print(plot_filter)
+
+while(!is.null(dev.list())) dev.off()#turn off device  
+
+```
+
+
+
