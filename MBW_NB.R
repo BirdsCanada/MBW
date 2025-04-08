@@ -1,33 +1,6 @@
-#Danielle is editing the code to see if it works for Canada
-
-# For Trend estimation: https://besjournals.onlinelibrary.wiley.com/doi/10.1111/j.1365-2664.2009.01724.x
-# and comment here (https://bookdown.org/adam_smith2/bbsbayes_intro_workshop/IndicesTrends.html)
-# "...fitting a log-linear slope to the series of all annual indices between the two end-points 
-# (e.g., all 11 years in a 10-year trend from 2008-2018). The slope of this line could be expressed 
-# as an average annual percent change across the time-period of interest." 
-# also some good ideas on that page about plotting trends on the map for each region
-
-
-# 2010-2023 State of the Birds Report
-# BITH Bicknell's Thrush
-# Fitting same abundance-side model for all species
-# file is sort by year, then region (to facilitate regional trends), and route.stop
-# I removed the regional intercept for three reasons
-# 1. It's based on arbitrary political boundaries (and we already have Latitude and Elevation)
-# 2. DIC suggests that it's not a better model than a simpler one with just annual intercepts
-# 3. Although removing the regional intercept changes the Abundance-Latitude relationship, the trends don't seem to change much
-# I also considered Longitude, but Lat*Lon is highly (0.72) correlated
+#Danielle's code to look at the effect of year on detection. 
 
 #Libraries
-library(jagsUI)
-library(beepr)
-library(wesanderson)
-library(colorspace)
-library(dplyr)
-library(unmarked)
-library(ggplot2)
-library(lubridate)
-library(MuMIn)
 library(naturecounts)
 library(tidyr)
 
@@ -96,7 +69,6 @@ for(m in 1:length(sp.list)) {
   write.csv(cov.matrix, paste(sp.list[m], "_CovMBW.csv", sep=""), row.names = FALSE)
   
 } # end sp.loop
-
 
 
 ##Now we want to assess the effect of year on detection probability
