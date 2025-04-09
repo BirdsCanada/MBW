@@ -29,7 +29,7 @@ ddf <- filter(ddf, subnational2_code != "CA.NS.IN", subnational2_code != "CA.NS.
 
 
 #########################
-##Loop for target species
+##Loop for target species  ****Is this where I'm supposed to be doing this part?  It seems like I just lose it again when I filter by species below?
 #########################
 
 events_matrix <- ddf %>%
@@ -102,6 +102,7 @@ library(lme4)
 ddf.zf$survey_year <- as.numeric(ddf.zf$survey_year)
 
 #Calculate survey start column. Time since sunrise (~5:30AM sunrise Popple Depot, NB in June, but used 4:15AM to avoid negative numbers.)
+#****I just did time from sunrise for both AM and PM. Does that work, or do I need to do separte time from sunrise and time before sunset?
 
 ddf.zf$TimeSinceSunrise <- ddf.zf$TimeObservationsStarted - 4.25
 #ddf.zf$TimeBeforeSunset <- 9.5- ddf.zf$TimeObservationsStarted
@@ -114,16 +115,20 @@ ddf.zf.bith <- subset(ddf.zf, CommonName == "Bicknell's Thrush")
 
 #GLM1 <- glm(ObservationCount ~ doy + survey_year + TimeSinceSunrise, family = poisson, data = ddf.zf.bith)
 
-#GLM2 <- glmer(ObservationCount ~ doy + survey_year + TimeSinceSunrise + (1 | RouteIdentifier),
-#             family = poisson, data = ddf.zf.bith)
+GLM2 <- glmer(ObservationCount ~ doy + survey_year + TimeSinceSunrise + (1 | RouteIdentifier),
+             family = poisson, data = ddf.zf.bith)
+#****This is the original model I tried and it will not converge, so I did the one below.  No super sure what to do with non-converging model.
+
 
 library(glmmTMB)
 GLM3 <- glmmTMB(ObservationCount ~ survey_year + doy + TimeSinceSunrise + (1 | RouteIdentifier),
               family = poisson, data = ddf.zf.bith)
+#***This one converges, but with warnings. Diagnostics look ok, except the dispersion/zero inflation one?  Also, colinearity problem for TimeSinceSunrise?
 
 # Generate diagnostic plots
 check_model(GLM3)
 summary(GLM3)
 
+##***Not sure where to go from here...
 
 
