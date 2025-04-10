@@ -27,108 +27,106 @@ ddf<-read.csv("Data/MBW_2024.csv") #pull in data from file for working with
 #remove NS data from 2016 and 2017
 ddf <- filter(ddf, subnational2_code != "CA.NS.IN", subnational2_code != "CA.NS.VI")
 
-
-#########################
-##Loop for target species  ****Is this where I'm supposed to be doing this part?  It seems like I just lose it again when I filter by species below?
-#########################
-
-events_matrix <- ddf %>%
-  select(SurveyAreaIdentifier,
-         survey_year,
-         survey_month,
-         survey_day,
-         latitude, 
-         longitude) %>%
-  distinct()
-
-table(ddf$species_id)
-table(ddf$CommonName)
-
-sp_ids <- unique(ddf$species_id)
-sp_ids
-
-
-zero_filled_data <- list()
-
-# Loop through each sp_ids
-for (i in sp_ids) {
-  # Filter the BBS data for each species in a given loop
-  all_species_data <- ddf %>% 
-    filter(species_id == i)
-  
-  # Join the NatureCounts data with the events matrix
-  all_species_events <- left_join(events_matrix, all_species_data,
-                                  by = c("SurveyAreaIdentifier", 
-                                         "survey_year", 
-                                         "survey_month",
-                                         "survey_day", 
-                                         "latitude", 
-                                         "longitude"))
-  
-  # Zero-fill the `ObservationCount` column for each species and across all events
-  all_species_events <- all_species_events %>%
-    mutate(ObservationCount = replace(ObservationCount, is.na(ObservationCount), 0))
-  
-  # Add the result to the list with species_id as the key
-  zero_filled_data[[as.character(i)]] <- all_species_events
-}
-
-zero_filled_dataframe <- bind_rows(zero_filled_data, .id = "species_id")
-
-
-ddf.zf <- zero_filled_dataframe
-
-
+#get rid of survey with weird start time
+ddf <- filter(ddf, TimeObservationsStarted != 13.3333)
 
 
 #retain only the columns that will be useful for the analysis
-ddf.zf<-ddf.zf %>% select(SurveyAreaIdentifier, RouteIdentifier, ProtocolCode, species_id, CommonName, subnational2_code, survey_year, survey_month, survey_day, TimeObservationsStarted, TimeObservationsEnded, ObservationCount, ObservationDescriptor, ObservationCount2, ObservationDescriptor2, ObservationCount3, ObservationDescriptor3, ObservationCount4, ObservationDescriptor4, 
+ddf<-ddf %>% select(SurveyAreaIdentifier, RouteIdentifier, ProtocolCode, species_id, CommonName, subnational2_code, survey_year, survey_month, survey_day, TimeObservationsStarted, TimeObservationsEnded, ObservationCount, ObservationDescriptor, ObservationCount2, ObservationDescriptor2, ObservationCount3, ObservationDescriptor3, ObservationCount4, ObservationDescriptor4, 
                     ObservationCount5, ObservationDescriptor5, ObservationCount6, ObservationDescriptor6, ObservationCount7, ObservationDescriptor7, ObservationCount8, ObservationDescriptor8,  ObservationCount9, ObservationDescriptor9, EffortMeasurement1, EffortUnits1, EffortMeasurement2, EffortUnits2, EffortMeasurement3, EffortUnits3, EffortMeasurement4, EffortUnits4, CollectorNumber, DecimalLatitude, DecimalLongitude, AllSpeciesReported)
-#remove NS data from 2016 and 2017
-#ddf <- filter(ddf, subnational2_code != "CA.NS.IN", subnational2_code != "CA.NS.VI")
 
 #create doy field
-ddf.zf<-ddf.zf %>% format_dates()
+ddf<-ddf %>% format_dates()
 
 
 ####NEW ANALYSIS###
 
-install.packages(c("performance", "see"))
+#install.packages(c("performance", "see"))
 library(performance)
 library(see)
 library(lme4)
 
 #make year continous
-ddf.zf$survey_year <- as.numeric(ddf.zf$survey_year)
+ddf$survey_year <- as.numeric(ddf$survey_year)
 
 #Calculate survey start column. Time since sunrise (~5:30AM sunrise Popple Depot, NB in June, but used 4:15AM to avoid negative numbers.)
-#****I just did time from sunrise for both AM and PM. Does that work, or do I need to do separte time from sunrise and time before sunset?
 
-ddf.zf$TimeSinceSunrise <- ddf.zf$TimeObservationsStarted - 4.25
-#ddf.zf$TimeBeforeSunset <- 9.5- ddf.zf$TimeObservationsStarted
+#ddf$TimeSinceSunrise <- ddf$TimeObservationsStarted - 4.25
+#ddf$TimeBeforeSunset <- ddf$TimeObservationsStarted - 20
 
-ddf.zf.bith <- subset(ddf.zf, CommonName == "Bicknell's Thrush")
-#ddf.zf.wtsp <- subset(ddf.zf, CommonName == "White-throated Sparrow")
+library(suncalc)
+library(ARUtools)
 
 
 #Poisson GLM
 
 #GLM1 <- glm(ObservationCount ~ doy + survey_year + TimeSinceSunrise, family = poisson, data = ddf.zf.bith)
 
-GLM2 <- glmer(ObservationCount ~ doy + survey_year + TimeSinceSunrise + (1 | RouteIdentifier),
-             family = poisson, data = ddf.zf.bith)
-#****This is the original model I tried and it will not converge, so I did the one below.  No super sure what to do with non-converging model.
+GLM2 <- glmer(ObservationCount ~ doy + survey_year + ProtocolCode + (1 | RouteIdentifier),
+             family = poisson, data = ddf)
 
 
 library(glmmTMB)
-GLM3 <- glmmTMB(ObservationCount ~ survey_year + doy + TimeSinceSunrise + (1 | RouteIdentifier),
-              family = poisson, data = ddf.zf.bith)
-#***This one converges, but with warnings. Diagnostics look ok, except the dispersion/zero inflation one?  Also, colinearity problem for TimeSinceSunrise?
+GLM3 <- glmmTMB(ObservationCount ~ survey_year + doy + ProtocolCode + (1 | RouteIdentifier),
+              family = poisson, data = ddf)
 
 # Generate diagnostic plots
-check_model(GLM3)
-summary(GLM3)
-
-##***Not sure where to go from here...
+check_model(GLM2)
+summary(GLM2)
 
 
+
+
+###April 9 from Danielle###
+#####Loop to zero fill and do analysis####
+
+results <- data.frame(Group = integer(),
+                      Estimate = numeric(),
+                      Std.Error = numeric(),
+                      z.value = numeric(),
+                      p.value = numeric(),
+                      stringsAsFactors = FALSE)
+
+
+sp_ids <- unique(ddf$species_id)
+
+for(m in 1:length(sp_ids)) {
+  
+   #m<-1 #for testing
+  
+  sp.ddf<-ddf %>% filter(CommonName==sp_ids[m]) #this will cycle through each species in sp.ids. For testing you can manually set m to 
+  sp.ddf<-sp.ddf %>% select(SurveyAreaIdentifier, RouteIdentifier, survey_year, doy, TimeObservationsStarted)
+  sp.ddf<-left_join(all_species_events, sp.ddf, by=c("SurveyAreaIdentifier", "survey_year")) #you will zero fill in the loop
+    
+              
+                    ###now you will put your analysis code here
+                    ##Then you will put your output table script here
+
+  GLM2 <- glmer(ObservationCount ~ doy + survey_year + ProtocolCode + (1 | RouteIdentifier),
+                family = poisson, data = ddf)
+  
+  # Get summary of the model
+  model_summary <- summary(GLM2)
+  
+  # Extract coefficients and statistics
+  estimate <- model_summary$coefficients[2, 1]  # Estimate for predictor
+  std_error <- model_summary$coefficients[2, 2]  # Standard error
+  z_value <- model_summary$coefficients[2, 3]    # z-value
+  p_value <- model_summary$coefficients[2, 4]    # p-value
+  
+  # Append results to the results data frame
+  results <- rbind(results, data.frame(
+    Group = sp_ids[m],
+    Estimate = estimate,
+    Std.Error = std_error,
+    z.value = z_value,
+    p.value = p_value
+  ))
+}
+
+print(results)
+
+
+# This closes the loop
+
+check_model(GLM2)
