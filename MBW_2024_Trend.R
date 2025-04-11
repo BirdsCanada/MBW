@@ -126,6 +126,8 @@ for(m in 1:length(sp_ids)) {
 
 print(results)
 
+write.csv(results, paste(sp.ids[m], "_ModelResults.csv", sep=""), row.names = FALSE)
+
 
 # This closes the loop
 
