@@ -1,9 +1,7 @@
 ##Libraries
 
 library(naturecounts)
-library(tidyr)
-library(unmarked)
-library(MuMIn)
+library(tidyverse)
 library(DHARMa)
 library(performance)
 library(see)
@@ -32,13 +30,16 @@ ddf<-read.csv("Data/MBW_2024.csv") #pull in data from file for working with
 ##Data Cleaning
 
 #remove NS data from 2016 and 2017
-ddf <- filter(ddf, subnational2_code != "CA.NS.IN", subnational2_code != "CA.NS.VI")
+ddf <- ddf %>% dplyr::filter(subnational2_code != "CA.NS.IN", subnational2_code != "CA.NS.VI")
+
+#remove prior to 2016
+ddf <- ddf %>%  dplyr::filter(survey_year>=2016)
 
 #get rid of survey with weird start time
-ddf <- filter(ddf, TimeObservationsStarted != 13.3333)
+ddf <- ddf %>% dplyr::filter(TimeObservationsStarted != 13.3333)
 
 #retain only the columns that will be useful for the analysis
-ddf<-ddf %>% select(SurveyAreaIdentifier, RouteIdentifier, ProtocolCode, species_id, CommonName, subnational2_code, survey_year, survey_month, survey_day, TimeObservationsStarted, TimeObservationsEnded, ObservationCount, ObservationDescriptor, ObservationCount2, ObservationDescriptor2, ObservationCount3, ObservationDescriptor3, ObservationCount4, ObservationDescriptor4, 
+ddf<-ddf %>% dplyr::select(SurveyAreaIdentifier, RouteIdentifier, ProtocolCode, species_id, CommonName, subnational2_code, survey_year, survey_month, survey_day, TimeObservationsStarted, TimeObservationsEnded, ObservationCount, ObservationDescriptor, ObservationCount2, ObservationDescriptor2, ObservationCount3, ObservationDescriptor3, ObservationCount4, ObservationDescriptor4, 
                     ObservationCount5, ObservationDescriptor5, ObservationCount6, ObservationDescriptor6, ObservationCount7, ObservationDescriptor7, ObservationCount8, ObservationDescriptor8,  ObservationCount9, ObservationDescriptor9, EffortMeasurement1, EffortUnits1, EffortMeasurement2, EffortUnits2, EffortMeasurement3, EffortUnits3, EffortMeasurement4, EffortUnits4, CollectorNumber, DecimalLatitude, DecimalLongitude, AllSpeciesReported)
 
 #create doy field
@@ -47,7 +48,7 @@ ddf<-ddf %>% format_dates()
 ##Data Visualization
 ddf_sf <- st_as_sf(ddf, coords = c("DecimalLatitude", "DecimalLongitude"), crs = 4326)
 
-  plot<-ggplot(data = ddf_sf) +
+  plot<-ggplot2::ggplot(data = ddf_sf) +
     # Select a basemap
     annotation_map_tile(type = "cartolight", zoom = NULL, progress = "none") +
     # Plot the points, color-coded by survey_year
@@ -61,7 +62,7 @@ ddf_sf <- st_as_sf(ddf, coords = c("DecimalLatitude", "DecimalLongitude"), crs =
     labs(title = "MBW Survey Stops",
          x = "Longitude",
          y = "Latitude")
-###Need to check your latitude on some of your points. 
+###Need to check your latitude on some of your points. Many have been fixed by removing before 2016.
   
 ##Data Summary
   
@@ -125,7 +126,7 @@ sp_ids<-unique(ddf$CommonName)
 
 for(m in 1:length(sp_ids)) {
   
-   #m<-1 #for testing
+  m<-1 #for testing
   
   sp.ddf<-ddf %>% filter(CommonName==sp_ids[m]) #this will cycle through each species in sp.ids. For testing you can manually set m to 
   sp.ddf<-sp.ddf %>% select(CommonName, SurveyAreaIdentifier, survey_year, doy, TimeObservationsStarted, ObservationCount)
@@ -135,14 +136,14 @@ for(m in 1:length(sp_ids)) {
     mutate(ObservationCount = replace(ObservationCount, is.na(ObservationCount), 0))  
               
   hist(sp.ddf$ObservationCount)
-  #Prepare variable<-
+  #Prepare variable
   sp.ddf$SurveyAreaIdentifier<-as.numeric(factor(paste(sp.ddf$SurveyAreaIdentifier)))
   sp.ddf$ProtocolCode<-as.numeric(factor(paste(sp.ddf$ProtocolCode)))
   sp.ddf$scaleyear<-scale(sp.ddf$survey_year, center = TRUE, scale = TRUE)
   
-  GLM1<- glmer(ObservationCount ~ scaleyear + (1 | SurveyAreaIdentifier), data = sp.ddf, family = poisson)
-  GLM2 <- glmer.nb(ObservationCount ~ scaleyear + (1 | SurveyAreaIdentifier), data = sp.ddf)
-  
+  GLM1<- glmer(ObservationCount ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = poisson)
+  GLM2 <- glmer.nb(ObservationCount ~ scaleyear  + (1 | SurveyAreaIdentifier), data = sp.ddf)
+   
   # Get summary of the model
   model_summary1 <-summary(GLM1)
   model_summary2 <- summary(GLM2)
