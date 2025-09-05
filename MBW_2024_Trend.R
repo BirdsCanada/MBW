@@ -12,6 +12,10 @@ library(ggspatial)
 library(ARUtools)
 library(glmmTMB)
 library(raster)
+library(ggmap)
+library(patchwork)
+library(performance)
+library(DHARMa)
    
 
 ##Load Data
@@ -43,46 +47,68 @@ ddf <- ddf %>% dplyr::filter(TimeObservationsStarted != 13.3333)
 ddf<-ddf %>% dplyr::select(SurveyAreaIdentifier, RouteIdentifier, ProtocolCode, species_id, CommonName, subnational2_code, survey_year, survey_month, survey_day, TimeObservationsStarted, TimeObservationsEnded, ObservationCount, ObservationDescriptor, ObservationCount2, ObservationDescriptor2, ObservationCount3, ObservationDescriptor3, ObservationCount4, ObservationDescriptor4, 
                     ObservationCount5, ObservationDescriptor5, ObservationCount6, ObservationDescriptor6, ObservationCount7, ObservationDescriptor7, ObservationCount8, ObservationDescriptor8,  ObservationCount9, ObservationDescriptor9, EffortMeasurement1, EffortUnits1, EffortMeasurement2, EffortUnits2, EffortMeasurement3, EffortUnits3, EffortMeasurement4, EffortUnits4, CollectorNumber, DecimalLatitude, DecimalLongitude, AllSpeciesReported)
 
-#get rid of CommonName = NA
-table(is.na(ddf$CommonName))
-ddf <- ddf %>% dplyr::filter(CommonName != "NA")
+#These are sites with zero detections. Will need for your zero-fill matrix
+# #get rid of CommonName = NA
+# table(is.na(ddf$CommonName))
+# ddf <- ddf %>% dplyr::filter(CommonName != "NA")
 
-#NAs in ObservationCount  - this is also done in the loop further down (I think)
-table(is.na(ddf$ObservationCount))
-ddf$ObservationCount[is.na(ddf$ObservationCount)] <- 0
+#This step should be done when zero-filling the species-specific data frame
+# #NAs in ObservationCount  - this is also done in the loop further down (I think)
+# table(is.na(ddf$ObservationCount))
+# ddf$ObservationCount[is.na(ddf$ObservationCount)] <- 0
 
-##BITH is the only one showing zero counts (19) before changing NAs in ObservationCount to 0 above. Is that right?
-table(ddf$CommonName, ddf$ObservationCount)
-table(ddf$RouteIdentifier, ddf$ObservationCount)
+#Same comment as above
+# ##BITH is the only one showing zero counts (19) before changing NAs in ObservationCount to 0 above. Is that right?
+# table(ddf$CommonName, ddf$ObservationCount)
+# table(ddf$RouteIdentifier, ddf$ObservationCount)
 
 #create doy field
 ddf<-ddf %>% format_dates()
 
 ##Data Visualization
+##Added backgroun map and facet wrap per year to better visualize 
 ddf_sf <- st_as_sf(ddf, coords = c("DecimalLatitude", "DecimalLongitude"), crs = 4326)
 
-  plot<-ggplot2::ggplot(data = ddf_sf) +
-    # Select a basemap
-    annotation_map_tile(type = "cartolight", zoom = NULL, progress = "none") +
-    # Plot the points, color-coded by survey_year
-    geom_sf(aes(color = as.factor(survey_year)), size = 1) +
-    # Add a theme with a minimal design and change the font styles, to your preference
-    theme_minimal() +
-       theme(legend.position = "bottom") +
-    # To make the points in the legend larger without affecting map points
-    guides(color = guide_legend(override.aes = list(size = 3))) +
-    # Define the title and axis names
-    labs(title = "MBW Survey Stops",
-         x = "Longitude",
-         y = "Latitude")
-###Need to check your latitude on some of your points. Many have been fixed by removing before 2016.
+# Create the plot
+plot <- ggplot2::ggplot(data = ddf_sf) +
+  # Select a basemap
+  annotation_map_tile(type = "cartolight", zoom = NULL, progress = "none") +
+  # Plot the points, color-coded by survey_year
+  geom_sf(aes(color = as.factor(survey_year)), size = 1) +
+  # Add the facet wrap to create a panel for each year
+  facet_wrap(~ survey_year) +
+  # Add a theme with a minimal design
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  # To make the points in the legend larger without affecting map points
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  # Define the title and axis names
+  labs(title = "MBW Survey Stops by Year",
+       x = "Longitude",
+       y = "Latitude",
+       color = "Survey Year") # Adds a title to the legend
 
+# Display the plot This is ugly but shows everything looks OK. 
 plot
-      
-##Data Summary
-  
+
+
 #total count of species per year
-sum_sp1<-ddf %>% group_by(CommonName, survey_year) %>% summarise(CountTot=sum(ObservationCount, na.rm =TRUE)) %>% filter(!is.na(CommonName))
+sum_sp1_stats <- ddf %>%
+  filter(!is.na(CommonName)) %>% 
+  group_by(CommonName, survey_year) %>%
+  summarise(
+    # The total count you already had
+    CountTot = sum(ObservationCount, na.rm = TRUE),
+    # Calculate Mean, Median, Min, and Max for each group
+    MeanCount = mean(ObservationCount, na.rm = TRUE),
+    MedianCount = median(ObservationCount, na.rm = TRUE),
+    MinCount = min(ObservationCount, na.rm = TRUE),
+    MaxCount = max(ObservationCount, na.rm = TRUE),
+    # It's good practice to also count the number of observations in each group
+    N = n(),
+    .groups = 'drop' # This is good practice to prevent issues later
+  )
+
 sum_sp<-pivot_wider(
   data = sum_sp1,
   names_from = survey_year,    # Column to use for new column names
@@ -102,14 +128,28 @@ ggplot(data = sum_sp1) +
 ggplot(sum_sp1, aes(survey_year, CountTot, colour = CommonName)) +  
   geom_point()+
   geom_smooth(formula = y ~ x, method = "lm")+
-  facet_wrap(~CommonName)
+  facet_wrap(~CommonName, scales = "free") #set scale = free to better see the differences
 ggsave("Total Count per Year by Species.pdf", width = 11, height = 8.5, units ="in")
 
 
- 
+# Create the box and whisker plot
+ggplot(ddf, aes(x = as.factor(survey_year), y = ObservationCount, fill = CommonName)) +
+  geom_boxplot() +
+  # Use facet_wrap to create a separate panel for each species (CommonName)
+  facet_wrap(~ CommonName, scales = "free_y") +
+  # Add some labels and a theme for readability
+  labs(
+    title = "Observation Counts by Year and Species",
+    x = "Survey Year",
+    y = "Observation Count"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none" # The legend is redundant because of the facet titles
+  )
+
 
 #more basic plot
-
 sum_sp1$CountTot <- as.numeric(sum_sp1$CountTot)
 sum_sp1$CommonName <- as.factor(sum_sp1$CommonName)
 
@@ -125,16 +165,9 @@ dev.off()
 
 
 
-
-
-
 ################################
   ####NEW ANALYSIS###
 ###############################
-
-
-
-
 #Calculate survey start column. Time since sunrise (~5:30AM sunrise Popple Depot, NB in June, but used 4:15AM to avoid negative numbers.)
 
 #ddf$TimeSinceSunrise <- ddf$TimeObservationsStarted - 4.25
@@ -175,15 +208,16 @@ dev.off()
 is.numeric(ddf$survey_year)
 ddf$survey_year <- as.numeric(ddf$survey_year)
 
-#Make response variable binomial
-library(dplyr)
-ddf <- ddf %>%
-  mutate(ObservationCount_nb = ifelse(ObservationCount != 0, 1, 0))
+#Route level Effort
+#Determine the number of stops per route to see if we need to effort correct
+stops<-ddf %>% group_by(RouteIdentifier, survey_year) %>% summarise(nstop = n_distinct(SurveyAreaIdentifier)) #we will include this as an offset in the model
 
-
-#Events
+#Route level Events
 #Create Events Matrix which includes the colvarites of interest
-all_species_events<-ddf %>% dplyr::select(SurveyAreaIdentifier, survey_year, survey_month, survey_day, doy, TimeObservationsStarted, DecimalLatitude, DecimalLongitude, ProtocolCode, RouteIdentifier) %>% distinct()
+#Removed Survey Area Identifier since we will do the analysis at the route level
+all_species_events<-NULL
+all_species_events<-ddf %>% dplyr::select(survey_year, survey_month, survey_day, doy, ProtocolCode, RouteIdentifier) %>% distinct()
+all_species_events<-all_species_events %>% left_join(stops, by=c("RouteIdentifier", "survey_year"))
 
 results <- data.frame(Group = integer(),
                       Estimate = numeric(),
@@ -199,29 +233,36 @@ for(m in 1:length(sp_ids)) {
   
   m<-10 #for testing
   
+  sp.ddf<-NULL #clear old dataframe
   sp.ddf<-ddf %>% filter(CommonName==sp_ids[m]) #this will cycle through each species in sp.ids. For testing you can manually set m to 
-  sp.ddf<-sp.ddf %>% dplyr::select(CommonName, SurveyAreaIdentifier, survey_year, doy, TimeObservationsStarted, ObservationCount, ObservationCount_nb)
-  sp.ddf<-left_join(all_species_events, sp.ddf, by=c("SurveyAreaIdentifier", "survey_year", "doy", "TimeObservationsStarted")) #you will zero fill in the loop
+  sp.ddf<-sp.ddf %>% dplyr::select(CommonName, RouteIdentifier, SurveyAreaIdentifier, survey_year, doy, ObservationCount, TimeObservationsStarted)
+  sp.ddf<-left_join(all_species_events, sp.ddf, by=c("RouteIdentifier", "survey_year", "doy")) #you will zero fill in the loop
   #Add the 0 to observation count
   sp.ddf <- sp.ddf %>%
    mutate(ObservationCount = replace(ObservationCount, is.na(ObservationCount), 0))  
-  #sp.ddf <- sp.ddf %>%
-   #mutate(ObservationCount_nb = replace(ObservationCount_nb, is.na(ObservationCount_nb), 0))  
+  
+  #Sum the total count of individual per route as response
+  sp.ddf<-sp.ddf %>% group_by(RouteIdentifier, survey_year, ProtocolCode, nstop, doy) %>% summarise(RouteTotal = sum(ObservationCount, na.rm=TRUE))
+  
+  # #Make response variable binomial
+  #library(dplyr)
+  sp.ddf <- sp.ddf %>%
+    mutate(RouteTotal_nb = ifelse(RouteTotal != 0, 1, 0))
+  
+  #Sum the count on a given route
   
   
-  hist(sp.ddf$ObservationCount)
+  hist(sp.ddf$RouteTotal)
   #Prepare variable
-  sp.ddf$SurveyAreaIdentifier<-as.numeric(factor(paste(sp.ddf$SurveyAreaIdentifier)))
+  #sp.ddf$SurveyAreaIdentifier<-as.numeric(factor(paste(sp.ddf$SurveyAreaIdentifier)))
   sp.ddf$RouteIdentifier<-as.numeric(factor(paste(sp.ddf$RouteIdentifier)))
   sp.ddf$ProtocolCode<-as.numeric(factor(paste(sp.ddf$ProtocolCode)))
   sp.ddf$scaleyear<-scale(sp.ddf$survey_year, center = TRUE, scale = TRUE)
 
-  
-  
-  #GLM1<- glmmTMB(ObservationCount ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = poisson)
-  #GLM2 <- glmmTMB(ObservationCount ~ scaleyear  + (1 | RouteIdentifier), data = sp.ddf)
-  #GLM3<- glmmTMB(ObservationCount_nb ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = nbinom2())
-  GLM4<- glmmTMB(ObservationCount ~ scaleyear + (1 | SurveyAreaIdentifier), data = sp.ddf, family = poisson())
+  #GLM1<- glmmTMB(RouteTotal ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = poisson)
+  #GLM2 <- glmmTMB(RouteTotal ~ scaleyear  + (1 | RouteIdentifier), data = sp.ddf)
+  #GLM3<- glmmTMB(RouteTotal_nb ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = nbinom2())
+  GLM4<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = nbinom2())
   
   # Get summary of the model
   #model_summary1 <-summary(GLM1)
@@ -229,6 +270,17 @@ for(m in 1:length(sp_ids)) {
   #model_summary3 <- summary(GLM3)
   model_summary4 <- summary(GLM4)
   
+  # Simulate residuals
+  simulationOutput <- simulateResiduals(fittedModel = GLM4) 
+  #QQ plot on the left should follow the line
+  #Residual on the right should be random 
+  
+  # Plot the main diagnostic plot
+  plot(simulationOutput)
+  
+  #Test for Over or Under Disperson
+  testDispersion(simulationOutput)
+  #significant result would suggest that the nbinom2 is not appropriate. 
   
   # Extract coefficients and statistics
   estimate <- model_summary4$coefficients[1]  # Estimate for predictor
@@ -255,7 +307,6 @@ for(m in 1:length(sp_ids)) {
 
 #isSingular(GLM2)
 
-library(performance)
 check_model(GLM4)
 #check_model(GLM2)
 #check_model(GLM1)
@@ -263,3 +314,5 @@ check_model(GLM4)
 summary(GLM4)
 
 #From Danielle in April: decide on which to use nb or poisson by species may have to make if else in loop
+
+#Danielle Diagnostics
