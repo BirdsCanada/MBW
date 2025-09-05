@@ -3,15 +3,16 @@
 library(naturecounts)
 library(tidyverse)
 library(DHARMa)
-library(performance)
-library(see)
+#library(performance)
+#library(see)
 library(lme4)
 library(sf)
 library(ggspatial)
-library(suncalc)
+#library(suncalc)
 library(ARUtools)
 library(glmmTMB)
-library(lme4)    
+library(raster)
+   
 
 ##Load Data
 
@@ -22,10 +23,10 @@ nc_requests(username = "amyleek")
 MBW.NC <- nc_data_dl(request_id = 252290, fields_set = "extended", username = "amyleek",
                      info = "analysis for HELP data internal")
 #write to data folder
-write.csv(MBW.NC, "Data/MBW_2024.csv")
+write.csv(MBW.NC, "Data/MBW_2025.csv")
 
 #read from data folder
-ddf<-read.csv("Data/MBW_2024.csv") #pull in data from file for working with
+ddf<-read.csv("Data/MBW_2025.csv") #pull in data from file for working with
 
 ##Data Cleaning
 
@@ -41,6 +42,18 @@ ddf <- ddf %>% dplyr::filter(TimeObservationsStarted != 13.3333)
 #retain only the columns that will be useful for the analysis
 ddf<-ddf %>% dplyr::select(SurveyAreaIdentifier, RouteIdentifier, ProtocolCode, species_id, CommonName, subnational2_code, survey_year, survey_month, survey_day, TimeObservationsStarted, TimeObservationsEnded, ObservationCount, ObservationDescriptor, ObservationCount2, ObservationDescriptor2, ObservationCount3, ObservationDescriptor3, ObservationCount4, ObservationDescriptor4, 
                     ObservationCount5, ObservationDescriptor5, ObservationCount6, ObservationDescriptor6, ObservationCount7, ObservationDescriptor7, ObservationCount8, ObservationDescriptor8,  ObservationCount9, ObservationDescriptor9, EffortMeasurement1, EffortUnits1, EffortMeasurement2, EffortUnits2, EffortMeasurement3, EffortUnits3, EffortMeasurement4, EffortUnits4, CollectorNumber, DecimalLatitude, DecimalLongitude, AllSpeciesReported)
+
+#get rid of CommonName = NA
+table(is.na(ddf$CommonName))
+ddf <- ddf %>% dplyr::filter(CommonName != "NA")
+
+#NAs in ObservationCount  - this is also done in the loop further down (I think)
+table(is.na(ddf$ObservationCount))
+ddf$ObservationCount[is.na(ddf$ObservationCount)] <- 0
+
+##BITH is the only one showing zero counts (19) before changing NAs in ObservationCount to 0 above. Is that right?
+table(ddf$CommonName, ddf$ObservationCount)
+table(ddf$RouteIdentifier, ddf$ObservationCount)
 
 #create doy field
 ddf<-ddf %>% format_dates()
@@ -63,25 +76,64 @@ ddf_sf <- st_as_sf(ddf, coords = c("DecimalLatitude", "DecimalLongitude"), crs =
          x = "Longitude",
          y = "Latitude")
 ###Need to check your latitude on some of your points. Many have been fixed by removing before 2016.
-  
+
+plot
+      
 ##Data Summary
   
 #total count of species per year
-sum_sp<-ddf %>% group_by(CommonName, survey_year) %>% summarise(CountTot=sum(ObservationCount, na.rm =TRUE)) %>% filter(!is.na(CommonName))
+sum_sp1<-ddf %>% group_by(CommonName, survey_year) %>% summarise(CountTot=sum(ObservationCount, na.rm =TRUE)) %>% filter(!is.na(CommonName))
 sum_sp<-pivot_wider(
-  data = sum_sp,
+  data = sum_sp1,
   names_from = survey_year,    # Column to use for new column names
   values_from = CountTot      # Column containing values to fill
 )
 
-#Events
-#Create Events Matrix which includes the colvarites of interest
-all_species_events<-ddf %>% select(SurveyAreaIdentifier, survey_year, survey_month, survey_day, doy, TimeObservationsStarted, DecimalLatitude, DecimalLongitude, ProtocolCode, RouteIdentifier) %>% distinct()
+write.csv(sum_sp, "TotalCountSpeciesPerYear25.csv")
 
-####NEW ANALYSIS###
+ggplot(data = sum_sp1)+ 
+  geom_point(aes(x = survey_year, y = CountTot))
 
-#make year continuous
-ddf$survey_year <- as.numeric(ddf$survey_year)
+ggplot(data = sum_sp1) +  
+  geom_pointrange(aes(x = survey_year, y = CountTot, ymin = 0, ymax = 600, colour = CommonName))
+
+
+#Multiple lines and plots
+ggplot(sum_sp1, aes(survey_year, CountTot, colour = CommonName)) +  
+  geom_point()+
+  geom_smooth(formula = y ~ x, method = "lm")+
+  facet_wrap(~CommonName)
+ggsave("Total Count per Year by Species.pdf", width = 11, height = 8.5, units ="in")
+
+
+ 
+
+#more basic plot
+
+sum_sp1$CountTot <- as.numeric(sum_sp1$CountTot)
+sum_sp1$CommonName <- as.factor(sum_sp1$CommonName)
+
+
+png("Detections by species and year.png")
+#par(mfrow = c(2,5))
+plot(CountTot ~ survey_year ,data=sum_sp1, type="p",col = CommonName, ylim=c(0,550),lwd=2,ylab="Number of Individuals Detected",las=2,xlab="",main="Total Individuals Detected by Species and Year",bty="l", xaxt = "n")
+axis(1, at=seq(2016,2024,by = 1), las = 2)
+
+#points(CountTot ~ CommonName, pch=20,col= survey_year,data=sum_sp1)
+#lines(CountTot~survey_year, type = "b", col = CommonName, data = sum_sp1)
+dev.off()
+
+
+
+
+
+
+################################
+  ####NEW ANALYSIS###
+###############################
+
+
+
 
 #Calculate survey start column. Time since sunrise (~5:30AM sunrise Popple Depot, NB in June, but used 4:15AM to avoid negative numbers.)
 
@@ -93,26 +145,45 @@ ddf$survey_year <- as.numeric(ddf$survey_year)
 
 #GLM1 <- glm(ObservationCount ~ doy + survey_year + TimeSinceSunrise, family = poisson, data = ddf.zf.bith)
 
-GLM2 <- glmer(ObservationCount ~ doy + survey_year + ProtocolCode + (1 | RouteIdentifier),
-             family = poisson, data = ddf)
+#GLM2 <- glmer(ObservationCount ~ doy + survey_year + ProtocolCode + (1 | RouteIdentifier),
+ #            family = poisson, data = ddf)
 
 #Danielle new suggested model to try
-GLM2 <- glmer(ObservationCount ~  survey_year + ProtocolCode + (1 | SurveyAreaIndentifier),
-              family = poisson, data = ddf)
+#GLM2 <- glmer(ObservationCount ~  survey_year + ProtocolCode + (1 | SurveyAreaIdentifier),
+  #            family = poisson, data = ddf)
 
 
-GLM3 <- glmmTMB(ObservationCount ~ survey_year + doy + ProtocolCode + (1 | RouteIdentifier),
-              family = poisson, data = ddf)
+#GLM3 <- glmmTMB(ObservationCount ~ survey_year + doy + ProtocolCode + (1 | RouteIdentifier),
+ #             family = poisson, data = ddf)
+
+
+
+
 
 # Generate diagnostic plots
-check_model(GLM2)
-summary(GLM2)
+#library(performance)
+#check_model(GLM3)
+#summary(GLM3)
 
 
 
 
 ###April 9 from Danielle###
 #####Loop to zero fill and do analysis####
+
+#make year continuous
+is.numeric(ddf$survey_year)
+ddf$survey_year <- as.numeric(ddf$survey_year)
+
+#Make response variable binomial
+library(dplyr)
+ddf <- ddf %>%
+  mutate(ObservationCount_nb = ifelse(ObservationCount != 0, 1, 0))
+
+
+#Events
+#Create Events Matrix which includes the colvarites of interest
+all_species_events<-ddf %>% dplyr::select(SurveyAreaIdentifier, survey_year, survey_month, survey_day, doy, TimeObservationsStarted, DecimalLatitude, DecimalLongitude, ProtocolCode, RouteIdentifier) %>% distinct()
 
 results <- data.frame(Group = integer(),
                       Estimate = numeric(),
@@ -121,40 +192,49 @@ results <- data.frame(Group = integer(),
                       p.value = numeric(),
                       stringsAsFactors = FALSE)
 
-
+#library(datawizard)
 sp_ids<-unique(ddf$CommonName)
 
 for(m in 1:length(sp_ids)) {
   
-  m<-1 #for testing
+  m<-10 #for testing
   
   sp.ddf<-ddf %>% filter(CommonName==sp_ids[m]) #this will cycle through each species in sp.ids. For testing you can manually set m to 
-  sp.ddf<-sp.ddf %>% select(CommonName, SurveyAreaIdentifier, survey_year, doy, TimeObservationsStarted, ObservationCount)
+  sp.ddf<-sp.ddf %>% dplyr::select(CommonName, SurveyAreaIdentifier, survey_year, doy, TimeObservationsStarted, ObservationCount, ObservationCount_nb)
   sp.ddf<-left_join(all_species_events, sp.ddf, by=c("SurveyAreaIdentifier", "survey_year", "doy", "TimeObservationsStarted")) #you will zero fill in the loop
   #Add the 0 to observation count
   sp.ddf <- sp.ddf %>%
-    mutate(ObservationCount = replace(ObservationCount, is.na(ObservationCount), 0))  
-              
+   mutate(ObservationCount = replace(ObservationCount, is.na(ObservationCount), 0))  
+  #sp.ddf <- sp.ddf %>%
+   #mutate(ObservationCount_nb = replace(ObservationCount_nb, is.na(ObservationCount_nb), 0))  
+  
+  
   hist(sp.ddf$ObservationCount)
   #Prepare variable
   sp.ddf$SurveyAreaIdentifier<-as.numeric(factor(paste(sp.ddf$SurveyAreaIdentifier)))
+  sp.ddf$RouteIdentifier<-as.numeric(factor(paste(sp.ddf$RouteIdentifier)))
   sp.ddf$ProtocolCode<-as.numeric(factor(paste(sp.ddf$ProtocolCode)))
   sp.ddf$scaleyear<-scale(sp.ddf$survey_year, center = TRUE, scale = TRUE)
+
   
-  GLM1<- glmer(ObservationCount ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = poisson)
-  GLM2 <- glmer.nb(ObservationCount ~ scaleyear  + (1 | SurveyAreaIdentifier), data = sp.ddf)
-   
+  
+  #GLM1<- glmmTMB(ObservationCount ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = poisson)
+  #GLM2 <- glmmTMB(ObservationCount ~ scaleyear  + (1 | RouteIdentifier), data = sp.ddf)
+  #GLM3<- glmmTMB(ObservationCount_nb ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = nbinom2())
+  GLM4<- glmmTMB(ObservationCount ~ scaleyear + (1 | SurveyAreaIdentifier), data = sp.ddf, family = poisson())
+  
   # Get summary of the model
-  model_summary1 <-summary(GLM1)
-  model_summary2 <- summary(GLM2)
+  #model_summary1 <-summary(GLM1)
+  #model_summary2 <- summary(GLM2)
+  #model_summary3 <- summary(GLM3)
+  model_summary4 <- summary(GLM4)
   
-  ###I have not done anything past getting the models to run###
   
   # Extract coefficients and statistics
-  estimate <- model_summary$coefficients[2, 1]  # Estimate for predictor
-  std_error <- model_summary$coefficients[2, 2]  # Standard error
-  z_value <- model_summary$coefficients[2, 3]    # z-value
-  p_value <- model_summary$coefficients[2, 4]    # p-value
+  estimate <- model_summary4$coefficients[1]  # Estimate for predictor
+  std_error <- model_summary4$coefficients[1]  # Standard error
+  z_value <- model_summary4$coefficients[1]    # z-value
+  p_value <- model_summary4$coefficients[1]    # p-value
   
   # Append results to the results data frame
   results <- rbind(results, data.frame(
@@ -164,13 +244,22 @@ for(m in 1:length(sp_ids)) {
     z.value = z_value,
     p.value = p_value
   ))
+
+
+#write.csv(results, paste(sp_ids[m], "_ModelResults.csv", sep=""), row.names = FALSE)
+
 }
-
-print(results)
-
-write.csv(results, paste(sp.ids[m], "_ModelResults.csv", sep=""), row.names = FALSE)
-
 
 # This closes the loop
 
-check_model(GLM2)
+
+#isSingular(GLM2)
+
+library(performance)
+check_model(GLM4)
+#check_model(GLM2)
+#check_model(GLM1)
+
+summary(GLM4)
+
+#From Danielle in April: decide on which to use nb or poisson by species may have to make if else in loop
