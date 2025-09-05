@@ -17,7 +17,7 @@ library(patchwork)
 library(performance)
 library(DHARMa)
    
-
+output_dir <- "Output"
 ##Load Data
 
 #Full MBW dataset from NatureCounts###
@@ -212,26 +212,33 @@ ddf$survey_year <- as.numeric(ddf$survey_year)
 #Determine the number of stops per route to see if we need to effort correct
 stops<-ddf %>% group_by(RouteIdentifier, survey_year) %>% summarise(nstop = n_distinct(SurveyAreaIdentifier)) #we will include this as an offset in the model
 
+#Add in route start time with slice_min
+start<-ddf %>% dplyr::select(RouteIdentifier, survey_year, TimeObservationsStarted) %>% group_by(RouteIdentifier, survey_year) %>% slice_min(TimeObservationsStarted) %>% distinct()
+
 #Route level Events
 #Create Events Matrix which includes the colvarites of interest
 #Removed Survey Area Identifier since we will do the analysis at the route level
 all_species_events<-NULL
 all_species_events<-ddf %>% dplyr::select(survey_year, survey_month, survey_day, doy, ProtocolCode, RouteIdentifier) %>% distinct()
 all_species_events<-all_species_events %>% left_join(stops, by=c("RouteIdentifier", "survey_year"))
+all_species_events<-all_species_events %>% left_join(start, by=c("RouteIdentifier", "survey_year"))
 
 results <- data.frame(Group = integer(),
                       Estimate = numeric(),
                       Std.Error = numeric(),
                       z.value = numeric(),
                       p.value = numeric(),
+                      Dispersion.ratio = numeric(), 
+                      Dispersion_p.value = numeric(),
                       stringsAsFactors = FALSE)
 
 #library(datawizard)
-sp_ids<-unique(ddf$CommonName)
+#sp_ids<-unique(ddf$CommonName)
+sp_ids<-c("Bicknell's Thrush", "Swainson's Thrush", "Blackpoll Warbler")
 
 for(m in 1:length(sp_ids)) {
   
-  m<-10 #for testing
+  #m<-10 #for testing
   
   sp.ddf<-NULL #clear old dataframe
   sp.ddf<-ddf %>% filter(CommonName==sp_ids[m]) #this will cycle through each species in sp.ids. For testing you can manually set m to 
@@ -276,17 +283,32 @@ for(m in 1:length(sp_ids)) {
   #Residual on the right should be random 
   
   # Plot the main diagnostic plot
+  pdf_path <- file.path(output_dir, paste(sp_ids[m], "_DHARMa_diagnostics.pdf"))
+  pdf(file = pdf_path, width = 7, height = 7)
   plot(simulationOutput)
+  plotResiduals(simulationOutput, form = sp.ddf$scaleyear)
+  plotResiduals(simulationOutput, form = sp.ddf$ProtocolCode)
+  dev.off()
+
   
   #Test for Over or Under Disperson
-  testDispersion(simulationOutput)
+  dispersion_result <- testDispersion(simulationOutput)
+  dispersion_ratio <- unname(dispersion_result$statistic)
+  dispersion_p_value <- dispersion_result$p.value
   #significant result would suggest that the nbinom2 is not appropriate. 
   
-  # Extract coefficients and statistics
-  estimate <- model_summary4$coefficients[1]  # Estimate for predictor
-  std_error <- model_summary4$coefficients[1]  # Standard error
-  z_value <- model_summary4$coefficients[1]    # z-value
-  p_value <- model_summary4$coefficients[1]    # p-value
+  # Access the table of coefficients for the conditional model
+  coeffs_table <- model_summary4$coefficients$cond
+  
+  # Extract values for the first predictor (row 2)
+  # Column 1: Estimate
+  # Column 2: Standard Error
+  # Column 3: z-value
+  # Column 4: p-value
+  estimate <- coeffs_table[2, 1]
+  std_error <- coeffs_table[2, 2]
+  z_value <- coeffs_table[2, 3]
+  p_value <- coeffs_table[2, 4]
   
   # Append results to the results data frame
   results <- rbind(results, data.frame(
@@ -294,11 +316,14 @@ for(m in 1:length(sp_ids)) {
     Estimate = estimate,
     Std.Error = std_error,
     z.value = z_value,
-    p.value = p_value
+    p.value = p_value,
+    Dispersion.ratio = dispersion_ratio, 
+    Dispersion_p.value = dispersion_p_value
+   
   ))
 
-
-#write.csv(results, paste(sp_ids[m], "_ModelResults.csv", sep=""), row.names = FALSE)
+  file_path2 <- file.path(output_dir, paste0(sp_ids[m], "_ModelResults.csv"))
+  write.table(results, file = file_path2, row.names = FALSE, sep = ",")
 
 }
 
