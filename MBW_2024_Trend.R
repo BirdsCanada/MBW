@@ -16,6 +16,7 @@ library(ggmap)
 library(patchwork)
 library(performance)
 library(DHARMa)
+library(scales)
    
 output_dir <- "Output"
 ##Load Data
@@ -27,10 +28,11 @@ nc_requests(username = "amyleek")
 MBW.NC <- nc_data_dl(request_id = 252290, fields_set = "extended", username = "amyleek",
                      info = "analysis for HELP data internal")
 #write to data folder
-write.csv(MBW.NC, "Data/MBW_2025.csv")
+#write.csv(MBW.NC, "Data/MBW_2025.csv")
 
 #read from data folder
-ddf<-read.csv("Data/MBW_2025.csv") #pull in data from file for working with
+#ddf<-read.csv("Data/MBW_2025.csv") #pull in data from file for working with
+ddf<-read.csv("Data/MBW_2025_updated.csv") #pull in data from file for working with
 
 ##Data Cleaning
 
@@ -41,12 +43,19 @@ ddf <- ddf %>% dplyr::filter(subnational2_code != "CA.NS.IN", subnational2_code 
 ddf <- ddf %>%  dplyr::filter(survey_year>=2016)
 
 #get rid of survey with weird start time
-ddf <- ddf %>% dplyr::filter(TimeObservationsStarted != 13.3333)
+ddf <- ddf %>% dplyr::filter(TimeObservationsStarted != 16.7167)
+
 
 #retain only the columns that will be useful for the analysis
 ddf<-ddf %>% dplyr::select(SurveyAreaIdentifier, RouteIdentifier, ProtocolCode, species_id, CommonName, subnational2_code, survey_year, survey_month, survey_day, TimeObservationsStarted, TimeObservationsEnded, ObservationCount, ObservationDescriptor, ObservationCount2, ObservationDescriptor2, ObservationCount3, ObservationDescriptor3, ObservationCount4, ObservationDescriptor4, 
                     ObservationCount5, ObservationDescriptor5, ObservationCount6, ObservationDescriptor6, ObservationCount7, ObservationDescriptor7, ObservationCount8, ObservationDescriptor8,  ObservationCount9, ObservationDescriptor9, EffortMeasurement1, EffortUnits1, EffortMeasurement2, EffortUnits2, EffortMeasurement3, EffortUnits3, EffortMeasurement4, EffortUnits4, CollectorNumber, DecimalLatitude, DecimalLongitude, AllSpeciesReported)
 
+
+ddf_BITH <- subset(ddf, ddf$CommonName == "Bicknell's Thrush")
+ddf_BITH25 <- subset(ddf_BITH, ddf_BITH$survey_year == 2025)
+write.csv(ddf_BITH25, "BITH_2025.csv")
+write.csv(ddf_BITH, "BITH_allyears.csv")
+  
 #These are sites with zero detections. Will need for your zero-fill matrix
 # #get rid of CommonName = NA
 # table(is.na(ddf$CommonName))
@@ -109,13 +118,15 @@ sum_sp1_stats <- ddf %>%
     .groups = 'drop' # This is good practice to prevent issues later
   )
 
+sum_sp1<- sum_sp1_stats %>% dplyr::select(CommonName, survey_year, CountTot)
+
 sum_sp<-pivot_wider(
   data = sum_sp1,
   names_from = survey_year,    # Column to use for new column names
   values_from = CountTot      # Column containing values to fill
 )
 
-write.csv(sum_sp, "TotalCountSpeciesPerYear25.csv")
+write.csv(sum_sp, "TotalCountSpeciesPerYear25_3.csv")
 
 ggplot(data = sum_sp1)+ 
   geom_point(aes(x = survey_year, y = CountTot))
@@ -125,10 +136,20 @@ ggplot(data = sum_sp1) +
 
 
 #Multiple lines and plots
+#sum_sp1$survey_year <- as.numeric(sum_sp1$survey_year)
+
 ggplot(sum_sp1, aes(survey_year, CountTot, colour = CommonName)) +  
   geom_point()+
   geom_smooth(formula = y ~ x, method = "lm")+
-  facet_wrap(~CommonName, scales = "free") #set scale = free to better see the differences
+  facet_wrap(~CommonName, scales = "free")+ #set scale = free to better see the differences
+  scale_x_continuous(breaks = pretty_breaks())+
+labs(
+  x = "Survey Year",
+  y = "Individuals Detected"
+) +
+  theme(
+    legend.position = "none" # The legend is redundant because of the facet titles
+  )
 ggsave("Total Count per Year by Species.pdf", width = 11, height = 8.5, units ="in")
 
 
@@ -157,7 +178,7 @@ sum_sp1$CommonName <- as.factor(sum_sp1$CommonName)
 png("Detections by species and year.png")
 #par(mfrow = c(2,5))
 plot(CountTot ~ survey_year ,data=sum_sp1, type="p",col = CommonName, ylim=c(0,550),lwd=2,ylab="Number of Individuals Detected",las=2,xlab="",main="Total Individuals Detected by Species and Year",bty="l", xaxt = "n")
-axis(1, at=seq(2016,2024,by = 1), las = 2)
+axis(1, at=seq(2016,2025,by = 1), las = 2)
 
 #points(CountTot ~ CommonName, pch=20,col= survey_year,data=sum_sp1)
 #lines(CountTot~survey_year, type = "b", col = CommonName, data = sum_sp1)
@@ -232,13 +253,28 @@ results <- data.frame(Group = integer(),
                       Dispersion_p.value = numeric(),
                       stringsAsFactors = FALSE)
 
-#library(datawizard)
+
 #sp_ids<-unique(ddf$CommonName)
-sp_ids<-c("Bicknell's Thrush", "Swainson's Thrush", "Blackpoll Warbler")
+
+
+
+#nbinom1 works, GLM4
+sp_ids<-c("Bicknell's Thrush", "Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")
+
+#genpois(link = "log") works, GLM5
+#sp_ids<-c("Blackpoll Warbler", "Yellow-bellied Flycatcher")
+
+
+#diagnostic problems with both GLM4 and GLM5. QQ plot and Levene okay
+#sp_ids<-c("Winter Wren", "Boreal Chickadee","Swainson's Thrush")
+
+
+
+
 
 for(m in 1:length(sp_ids)) {
   
-  #m<-10 #for testing
+  #m<-1 #for testing
   
   sp.ddf<-NULL #clear old dataframe
   sp.ddf<-ddf %>% filter(CommonName==sp_ids[m]) #this will cycle through each species in sp.ids. For testing you can manually set m to 
@@ -269,16 +305,27 @@ for(m in 1:length(sp_ids)) {
   #GLM1<- glmmTMB(RouteTotal ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = poisson)
   #GLM2 <- glmmTMB(RouteTotal ~ scaleyear  + (1 | RouteIdentifier), data = sp.ddf)
   #GLM3<- glmmTMB(RouteTotal_nb ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = nbinom2())
-  GLM4<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = nbinom2())
   
-  # Get summary of the model
+  
+  GLM4<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
+  #GLM5<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
+ 
+             
+ 
+   # Get summary of the model
   #model_summary1 <-summary(GLM1)
   #model_summary2 <- summary(GLM2)
   #model_summary3 <- summary(GLM3)
+  
   model_summary4 <- summary(GLM4)
+  #model_summary5 <- summary(GLM5)
+ 
   
   # Simulate residuals
-  simulationOutput <- simulateResiduals(fittedModel = GLM4) 
+  simulationOutput <- simulateResiduals(fittedModel = GLM4)
+  #simulationOutput <- simulateResiduals(fittedModel = GLM5)
+
+  
   #QQ plot on the left should follow the line
   #Residual on the right should be random 
   
@@ -332,12 +379,8 @@ for(m in 1:length(sp_ids)) {
 
 #isSingular(GLM2)
 
-check_model(GLM4)
-#check_model(GLM2)
-#check_model(GLM1)
+#check_model(GLM4)
+#check_model(GLM5)
 
 summary(GLM4)
-
-#From Danielle in April: decide on which to use nb or poisson by species may have to make if else in loop
-
-#Danielle Diagnostics
+#summary(GLM5)
