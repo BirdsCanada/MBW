@@ -202,7 +202,7 @@ results <- data.frame(Group = integer(),
                       Percent_Change = numeric(), 
                       stringsAsFactors = FALSE)
 
-
+ddf<-ddf %>% filter(!is.na(CommonName))
 sp_ids<-unique(ddf$CommonName)
 
 for(m in 1:length(sp_ids)) {
@@ -230,7 +230,7 @@ for(m in 1:length(sp_ids)) {
   
   hist(sp.ddf$RouteTotal)
   #Prepare variable
-  sp.ddf$RouteIdentifier<-as.numeric(factor(paste(sp.ddf$RouteIdentifier)))
+  sp.ddf$RouteIdentifierFact<-as.numeric(factor(paste(sp.ddf$RouteIdentifier)))
   sp.ddf$ProtocolCode<-as.numeric(factor(paste(sp.ddf$ProtocolCode)))
   sp.ddf$CollectorNumber<-as.numeric(factor(paste(sp.ddf$CollectorNumber)))
   sp.ddf$scaleyear<-scale(sp.ddf$survey_year, center = TRUE, scale = TRUE)
@@ -254,15 +254,15 @@ for(m in 1:length(sp_ids)) {
 
   
   if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")){
-    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
+    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
   }
  
    if(sp_ids[m] %in% c("Blackpoll Warbler", "Yellow-bellied Flycatcher")){
-  GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
+  GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
    }
   
   if(sp_ids[m] == "Winter Wren"){
-    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + scalesquirrel + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = nbinom1())               
+    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + scalesquirrel + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())               
   }
  
   #diagnostic problems with both GLM4 and GLM5. QQ plot and Levene okay
