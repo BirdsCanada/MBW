@@ -27,12 +27,13 @@ output_dir <- "Output"
 nc_requests(username = "amyleek")
 MBW.NC <- nc_data_dl(request_id = 252290, fields_set = "extended", username = "amyleek",
                      info = "analysis for HELP data internal")
+#ddf <-MBW.NC
 #write to data folder
 #write.csv(MBW.NC, "Data/MBW_2025.csv")
 
 #read from data folder
 #ddf<-read.csv("Data/MBW_2025.csv") #pull in data from file for working with
-ddf<-read.csv("Data/MBW_2025_updated.csv") #pull in data from file for working with
+ddf<-read.csv("Data/MBW_2025_updated_Oct19.csv") #pull in data from file for working with
 
 ##Data Cleaning
 
@@ -259,14 +260,14 @@ results <- data.frame(Group = integer(),
 
 
 #nbinom1 works, GLM4
-sp_ids<-c("Bicknell's Thrush", "Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")
+#sp_ids<-c("Bicknell's Thrush", "Hermit Thrush")
 
 #genpois(link = "log") works, GLM5
-#sp_ids<-c("Blackpoll Warbler", "Yellow-bellied Flycatcher")
+sp_ids<-c("Yellow-bellied Flycatcher", "White-throated Sparrow")
 
 
 #diagnostic problems with both GLM4 and GLM5. QQ plot and Levene okay
-#sp_ids<-c("Winter Wren", "Boreal Chickadee","Swainson's Thrush")
+#sp_ids<-c("Winter Wren", "Boreal Chickadee","Swainson's Thrush", "Fox Sparrow", "Blackpoll Warbler")
 
 
 
@@ -307,8 +308,8 @@ for(m in 1:length(sp_ids)) {
   #GLM3<- glmmTMB(RouteTotal_nb ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = nbinom2())
   
   
-  GLM4<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
-  #GLM5<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
+  #GLM4<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
+  GLM5<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
  
              
  
@@ -317,13 +318,13 @@ for(m in 1:length(sp_ids)) {
   #model_summary2 <- summary(GLM2)
   #model_summary3 <- summary(GLM3)
   
-  model_summary4 <- summary(GLM4)
-  #model_summary5 <- summary(GLM5)
+  #model_summary4 <- summary(GLM4)
+  model_summary5 <- summary(GLM5)
  
   
   # Simulate residuals
-  simulationOutput <- simulateResiduals(fittedModel = GLM4)
-  #simulationOutput <- simulateResiduals(fittedModel = GLM5)
+  #simulationOutput <- simulateResiduals(fittedModel = GLM4)
+  simulationOutput <- simulateResiduals(fittedModel = GLM5)
 
   
   #QQ plot on the left should follow the line
@@ -383,4 +384,81 @@ for(m in 1:length(sp_ids)) {
 #check_model(GLM5)
 
 summary(GLM4)
-#summary(GLM5)
+summary(GLM5)
+
+
+
+
+
+##################################
+
+####Red Squirrel vs Winter Wren###
+
+##################################
+
+# Aggregate data by year
+total_counts_RS <- ddf %>%
+  group_by(survey_year) %>%
+  summarise(
+    total_RS = sum(ObservationCount[CommonName == "North American Red Squirrel"], na.rm = TRUE),
+    total_WW = sum(ObservationCount[CommonName == "Winter Wren"], na.rm = TRUE),
+    total_BT = sum(ObservationCount[CommonName == "Bicknell's Thrush"], na.rm = TRUE),
+    total_ST = sum(ObservationCount[CommonName == "Swainson's Thrush"], na.rm = TRUE),
+    total_BP = sum(ObservationCount[CommonName == "Blackpoll Warbler"], na.rm = TRUE)
+  )
+
+# Calculate the correlation coefficient
+correlation_coefficient <- cor(total_counts_RS$total_RS, total_counts_RS$total_WW)
+print(correlation_coefficient)
+
+# Test for significance
+correlation_test <- cor.test(total_counts_RS$total_RS, total_counts_RS$total_WW)
+print(correlation_test)
+
+# Visualizing the results
+colors <- rainbow(length(unique(total_counts_RS$survey_year)))
+
+plot(total_counts_RS$total_RS, total_counts_RS$total_WW,
+     main="Comparison of Species Totals Each Year",
+     xlab="Total Red Squirrel",
+     ylab="Total Winter Wren",
+    pch = 19,  # Solid points
+    col = colors[as.numeric(factor(total_counts_RS$survey_year))],  # Color by year
+abline(lm(total_counts_RS$total_RS ~ total_counts_RS$total_WW), col="red"))
+
+# Add a legend
+legend("topright", legend = unique(total_counts_RS$survey_year), 
+       col = colors, pch = 19, cex = 0.4, title = "Year")
+
+
+
+
+###Bird Species at year lag compared to Red Squirrel###
+
+# Create a lagged variable for Species A
+total_counts_RS <- total_counts_RS %>%
+  mutate(total_RS_lag = lag(total_RS, 1)) %>%
+  na.omit()  # Remove NA values from lagging
+
+# Check the final dataset
+print(total_counts_RS)
+
+# Calculate the correlation coefficient
+correlation_coefficient_lag <- cor(total_counts_RS$total_RS_lag, total_counts_RS$total_WW)
+print(correlation_coefficient_lag)
+
+# Test for significance
+correlation_test_lag <- cor.test(total_counts_RS$total_RS_lag, total_counts_RS$total_WW)
+print(correlation_test_lag)
+
+# Visualizing the results
+plot(total_counts_RS$total_RS_lag, total_counts_RS$total_WW, 
+     main="Lagged Comparison of Species Counts",
+     xlab="Winter Wren",
+     ylab="Total Red Squirrel (Lagged)")
+abline(lm(total_counts_RS$total_RS_lag ~ total_counts_RS$total_WW), col="blue")
+
+
+
+#git reset hard
+
