@@ -57,21 +57,6 @@ ddf_BITH25 <- subset(ddf_BITH, ddf_BITH$survey_year == 2025)
 write.csv(ddf_BITH25, "BITH_2025.csv")
 write.csv(ddf_BITH, "BITH_allyears.csv")
   
-#These are sites with zero detections. Will need for your zero-fill matrix
-# #get rid of CommonName = NA
-# table(is.na(ddf$CommonName))
-# ddf <- ddf %>% dplyr::filter(CommonName != "NA")
-
-#This step should be done when zero-filling the species-specific data frame
-# #NAs in ObservationCount  - this is also done in the loop further down (I think)
-# table(is.na(ddf$ObservationCount))
-# ddf$ObservationCount[is.na(ddf$ObservationCount)] <- 0
-
-#Same comment as above
-# ##BITH is the only one showing zero counts (19) before changing NAs in ObservationCount to 0 above. Is that right?
-# table(ddf$CommonName, ddf$ObservationCount)
-# table(ddf$RouteIdentifier, ddf$ObservationCount)
-
 #create doy field
 ddf<-ddf %>% format_dates()
 
@@ -185,47 +170,6 @@ axis(1, at=seq(2016,2025,by = 1), las = 2)
 #lines(CountTot~survey_year, type = "b", col = CommonName, data = sum_sp1)
 dev.off()
 
-
-
-################################
-  ####NEW ANALYSIS###
-###############################
-#Calculate survey start column. Time since sunrise (~5:30AM sunrise Popple Depot, NB in June, but used 4:15AM to avoid negative numbers.)
-
-#ddf$TimeSinceSunrise <- ddf$TimeObservationsStarted - 4.25
-#ddf$TimeBeforeSunset <- ddf$TimeObservationsStarted - 20
-
-
-#Poisson GLM
-
-#GLM1 <- glm(ObservationCount ~ doy + survey_year + TimeSinceSunrise, family = poisson, data = ddf.zf.bith)
-
-#GLM2 <- glmer(ObservationCount ~ doy + survey_year + ProtocolCode + (1 | RouteIdentifier),
- #            family = poisson, data = ddf)
-
-#Danielle new suggested model to try
-#GLM2 <- glmer(ObservationCount ~  survey_year + ProtocolCode + (1 | SurveyAreaIdentifier),
-  #            family = poisson, data = ddf)
-
-
-#GLM3 <- glmmTMB(ObservationCount ~ survey_year + doy + ProtocolCode + (1 | RouteIdentifier),
- #             family = poisson, data = ddf)
-
-
-
-
-
-# Generate diagnostic plots
-#library(performance)
-#check_model(GLM3)
-#summary(GLM3)
-
-
-
-
-###April 9 from Danielle###
-#####Loop to zero fill and do analysis####
-
 #make year continuous
 is.numeric(ddf$survey_year)
 ddf$survey_year <- as.numeric(ddf$survey_year)
@@ -237,13 +181,17 @@ stops<-ddf %>% group_by(RouteIdentifier, survey_year) %>% summarise(nstop = n_di
 #Add in route start time with slice_min
 start<-ddf %>% dplyr::select(RouteIdentifier, survey_year, TimeObservationsStarted) %>% group_by(RouteIdentifier, survey_year) %>% slice_min(TimeObservationsStarted) %>% distinct()
 
+##Add Red Squire for Winter Wren
+RS<-sum_sp1 %>% filter(CommonName=="North American Red Squirrel") %>% rename( RedSquirrel = CountTot ) %>% dplyr::select(-CommonName)
+
 #Route level Events
 #Create Events Matrix which includes the colvarites of interest
 #Removed Survey Area Identifier since we will do the analysis at the route level
 all_species_events<-NULL
-all_species_events<-ddf %>% dplyr::select(survey_year, survey_month, survey_day, doy, ProtocolCode, RouteIdentifier) %>% distinct()
+all_species_events<-ddf %>% dplyr::select(survey_year, survey_month, survey_day, doy, ProtocolCode, RouteIdentifier, SurveyAreaIdentifier, CollectorNumber) %>% distinct()
 all_species_events<-all_species_events %>% left_join(stops, by=c("RouteIdentifier", "survey_year"))
 all_species_events<-all_species_events %>% left_join(start, by=c("RouteIdentifier", "survey_year"))
+all_species_events<-all_species_events %>% left_join(RS, by=c("survey_year"))
 
 results <- data.frame(Group = integer(),
                       Estimate = numeric(),
@@ -252,25 +200,12 @@ results <- data.frame(Group = integer(),
                       p.value = numeric(),
                       Dispersion.ratio = numeric(), 
                       Dispersion_p.value = numeric(),
+                      Percent_Change = numeric(), 
                       stringsAsFactors = FALSE)
 
 
-#sp_ids<-unique(ddf$CommonName)
-
-
-
-#nbinom1 works, GLM4
-#sp_ids<-c("Bicknell's Thrush", "Hermit Thrush")
-
-#genpois(link = "log") works, GLM5
-sp_ids<-c("Yellow-bellied Flycatcher", "White-throated Sparrow")
-
-
-#diagnostic problems with both GLM4 and GLM5. QQ plot and Levene okay
-#sp_ids<-c("Winter Wren", "Boreal Chickadee","Swainson's Thrush", "Fox Sparrow", "Blackpoll Warbler")
-
-
-
+ddf<-ddf %>% filter(!is.na(CommonName))
+sp_ids<-unique(ddf$CommonName)
 
 
 for(m in 1:length(sp_ids)) {
@@ -279,14 +214,14 @@ for(m in 1:length(sp_ids)) {
   
   sp.ddf<-NULL #clear old dataframe
   sp.ddf<-ddf %>% filter(CommonName==sp_ids[m]) #this will cycle through each species in sp.ids. For testing you can manually set m to 
-  sp.ddf<-sp.ddf %>% dplyr::select(CommonName, RouteIdentifier, SurveyAreaIdentifier, survey_year, doy, ObservationCount, TimeObservationsStarted)
-  sp.ddf<-left_join(all_species_events, sp.ddf, by=c("RouteIdentifier", "survey_year", "doy")) #you will zero fill in the loop
+  sp.ddf<-sp.ddf %>% dplyr::select(CommonName, RouteIdentifier, SurveyAreaIdentifier, survey_year, doy, ObservationCount)
+  sp.ddf<-left_join(all_species_events, sp.ddf, by=c("RouteIdentifier", "SurveyAreaIdentifier", "survey_year", "doy")) #you will zero fill in the loop
   #Add the 0 to observation count
   sp.ddf <- sp.ddf %>%
    mutate(ObservationCount = replace(ObservationCount, is.na(ObservationCount), 0))  
   
   #Sum the total count of individual per route as response
-  sp.ddf<-sp.ddf %>% group_by(RouteIdentifier, survey_year, ProtocolCode, nstop, doy) %>% summarise(RouteTotal = sum(ObservationCount, na.rm=TRUE))
+  sp.ddf<-sp.ddf %>% group_by(RouteIdentifier, survey_year, ProtocolCode, nstop, doy, CollectorNumber, RedSquirrel) %>% summarise(RouteTotal = sum(ObservationCount, na.rm=TRUE))
   
   # #Make response variable binomial
   #library(dplyr)
@@ -298,35 +233,53 @@ for(m in 1:length(sp_ids)) {
   
   hist(sp.ddf$RouteTotal)
   #Prepare variable
-  #sp.ddf$SurveyAreaIdentifier<-as.numeric(factor(paste(sp.ddf$SurveyAreaIdentifier)))
-  sp.ddf$RouteIdentifier<-as.numeric(factor(paste(sp.ddf$RouteIdentifier)))
+  sp.ddf$RouteIdentifierFact<-as.numeric(factor(paste(sp.ddf$RouteIdentifier)))
   sp.ddf$ProtocolCode<-as.numeric(factor(paste(sp.ddf$ProtocolCode)))
+  sp.ddf$CollectorNumber<-as.numeric(factor(paste(sp.ddf$CollectorNumber)))
   sp.ddf$scaleyear<-scale(sp.ddf$survey_year, center = TRUE, scale = TRUE)
+  sp.ddf$scalesquirrel<-scale(sp.ddf$RedSquirrel, center = TRUE, scale = TRUE)
+  
+  #create a species specific summary 
+  sp.sum<-sp.ddf %>% group_by(survey_year, RouteIdentifier) %>% summarise(n= sum(RouteTotal))
 
-  #GLM1<- glmmTMB(RouteTotal ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = poisson)
-  #GLM2 <- glmmTMB(RouteTotal ~ scaleyear  + (1 | RouteIdentifier), data = sp.ddf)
-  #GLM3<- glmmTMB(RouteTotal_nb ~ scaleyear + ProtocolCode + (1 | SurveyAreaIdentifier), data = sp.ddf, family = nbinom2())
+  sp_wide <- sp.sum %>%
+    pivot_wider(
+      names_from = survey_year,     # column headers
+      values_from = n              # cell values
+    )
   
-  
-  #GLM4<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
-  GLM5<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifier) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
+  write.table(
+    sp_wide,
+    file = file.path(output_dir, paste0(sp_ids[m], "SpeciesByYearSummary.csv")),
+    sep = ",",
+    row.names = FALSE
+  )
+
+
+  if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")){
+    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
+  }
+
  
-             
- 
-   # Get summary of the model
-  #model_summary1 <-summary(GLM1)
-  #model_summary2 <- summary(GLM2)
-  #model_summary3 <- summary(GLM3)
+   if(sp_ids[m] %in% c("Blackpoll Warbler", "Yellow-bellied Flycatcher")){
+  GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
+   }
   
-  #model_summary4 <- summary(GLM4)
-  model_summary5 <- summary(GLM5)
+  if(sp_ids[m] == "Winter Wren"){
+    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + scalesquirrel + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())               
+  }
+
  
+  #diagnostic problems with both GLM4 and GLM5. QQ plot and Levene okay
+  #sp_ids<-c("Boreal Chickadee","Swainson's Thrush")
   
+  model_summary <- summary(GLM)
+ 
   # Simulate residuals
-  #simulationOutput <- simulateResiduals(fittedModel = GLM4)
-  simulationOutput <- simulateResiduals(fittedModel = GLM5)
 
-  
+  simulationOutput <- simulateResiduals(fittedModel = GLM)
+
+
   #QQ plot on the left should follow the line
   #Residual on the right should be random 
   
@@ -346,9 +299,9 @@ for(m in 1:length(sp_ids)) {
   #significant result would suggest that the nbinom2 is not appropriate. 
   
   # Access the table of coefficients for the conditional model
-  coeffs_table <- model_summary4$coefficients$cond
+  coeffs_table <- model_summary$coefficients$cond
   
-  # Extract values for the first predictor (row 2)
+    # Extract values for the first predictor (row 2)
   # Column 1: Estimate
   # Column 2: Standard Error
   # Column 3: z-value
@@ -358,6 +311,18 @@ for(m in 1:length(sp_ids)) {
   z_value <- coeffs_table[2, 3]
   p_value <- coeffs_table[2, 4]
   
+  # Get standard deviation of original year if scaleyear is scaled
+  sd_year <- sd(sp.ddf$survey_year)
+  
+  # Convert to per-year effect
+  beta_year <- estimate / sd_year
+  
+  # Population change per year (multiplicative factor)
+  annual_change_factor <- exp(beta_year)
+  
+  # Percent change per year
+  annual_percent_change <- (annual_change_factor - 1) * 100
+
   # Append results to the results data frame
   results <- rbind(results, data.frame(
     Group = sp_ids[m],
@@ -366,8 +331,9 @@ for(m in 1:length(sp_ids)) {
     z.value = z_value,
     p.value = p_value,
     Dispersion.ratio = dispersion_ratio, 
-    Dispersion_p.value = dispersion_p_value
-   
+    Dispersion_p.value = dispersion_p_value,
+    Annual_Per_Change = annual_percent_change
+    
   ))
 
   file_path2 <- file.path(output_dir, paste0(sp_ids[m], "_ModelResults.csv"))
@@ -377,14 +343,7 @@ for(m in 1:length(sp_ids)) {
 
 # This closes the loop
 
-
-#isSingular(GLM2)
-
-#check_model(GLM4)
-#check_model(GLM5)
-
-summary(GLM4)
-summary(GLM5)
+summary(GLM)
 
 
 
