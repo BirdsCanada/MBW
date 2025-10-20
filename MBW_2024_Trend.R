@@ -457,8 +457,3 @@ plot(total_counts_RS$total_RS_lag, total_counts_RS$total_WW,
      xlab="Winter Wren",
      ylab="Total Red Squirrel (Lagged)")
 abline(lm(total_counts_RS$total_RS_lag ~ total_counts_RS$total_WW), col="blue")
-
-
-
-#git reset hard
-
