@@ -259,7 +259,6 @@ for(m in 1:length(sp_ids)) {
   png(filename = file.path(output_dir, paste0(sp_ids[m], "RouteTotal_histogram.png")))
   hist(sp.ddf$RouteTotal)
   dev.off()
-} 
   
   if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")){
     GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
