@@ -85,7 +85,7 @@ plot <- ggplot2::ggplot(data = ddf_sf) +
 # Display the plot This is ugly but shows everything looks OK. 
 plot
 
-
+ddf$ObservationCount<-as.integer(ddf$ObservationCount)
 #total count of species per year
 sum_sp1_stats <- ddf %>%
   filter(!is.na(CommonName)) %>% 
@@ -225,10 +225,7 @@ for(m in 1:length(sp_ids)) {
   sp.ddf <- sp.ddf %>%
     mutate(RouteTotal_nb = ifelse(RouteTotal != 0, 1, 0))
   
-  #Sum the count on a given route
   
-  
-  hist(sp.ddf$RouteTotal)
   #Prepare variable
   sp.ddf$RouteIdentifierFact<-as.numeric(factor(paste(sp.ddf$RouteIdentifier)))
   sp.ddf$ProtocolCode<-as.numeric(factor(paste(sp.ddf$ProtocolCode)))
@@ -236,9 +233,14 @@ for(m in 1:length(sp_ids)) {
   sp.ddf$scaleyear<-scale(sp.ddf$survey_year, center = TRUE, scale = TRUE)
   sp.ddf$scalesquirrel<-scale(sp.ddf$RedSquirrel, center = TRUE, scale = TRUE)
   
+  
+  #remove routes where a species was never detected, or if the route was sampled in < 2 years
+  route_remove<-sp.ddf %>% group_by(RouteIdentifier) %>% summarise(keep_route = sum(RouteTotal, na.rm = TRUE), samples = length(RouteTotal)) %>% filter(keep_route>0 & samples >2) %>% dplyr::select(-keep_route, -samples)
+  sp.ddf<-left_join(route_remove, sp.ddf, by="RouteIdentifier")
+
   #create a species specific summary 
   sp.sum<-sp.ddf %>% group_by(survey_year, RouteIdentifier) %>% summarise(n= sum(RouteTotal))
-
+  
   sp_wide <- sp.sum %>%
     pivot_wider(
       names_from = survey_year,     # column headers
@@ -251,7 +253,13 @@ for(m in 1:length(sp_ids)) {
     sep = ",",
     row.names = FALSE
   )
-
+  
+  #Sum the count on a given route
+  hist(sp.ddf$RouteTotal)
+  png(filename = file.path(output_dir, paste0(sp_ids[m], "RouteTotal_histogram.png")))
+  hist(sp.ddf$RouteTotal)
+  dev.off()
+} 
   
   if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")){
     GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
@@ -265,8 +273,13 @@ for(m in 1:length(sp_ids)) {
     GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + scalesquirrel + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())               
   }
  
-  #diagnostic problems with both GLM4 and GLM5. QQ plot and Levene okay
-  #sp_ids<-c("Boreal Chickadee","Swainson's Thrush")
+  if(sp_ids[m] %in% c("Boreal Chickadee","Swainson's Thrush")){
+    GLM <- glmmTMB(RouteTotal ~ scaleyear + ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf,
+      ziformula = ~ 1,  # Intercept-only zero-inflation
+      family = genpois(link = "log")
+    )
+    
+  }
   
   model_summary <- summary(GLM)
  
