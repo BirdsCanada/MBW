@@ -29,11 +29,11 @@ MBW.NC <- nc_data_dl(request_id = 252290, fields_set = "extended", username = "a
                      info = "analysis for HELP data internal")
 #ddf <-MBW.NC
 #write to data folder
-#write.csv(MBW.NC, "Data/MBW_2025.csv")
+write.csv(MBW.NC, "Data/MBW_2025_31Oct.csv")
 
 #read from data folder
-#ddf<-read.csv("Data/MBW_2025.csv") #pull in data from file for working with
-ddf<-read.csv("Data/MBW_2025_updated_Oct19.csv") #pull in data from file for working with
+ddf<-read.csv("Data/MBW_2025_31Oct.csv") #pull in data from file for working with
+#ddf<-read.csv("Data/MBW_2025_updated_Oct19.csv") #pull in data from file for working with
 
 ##Data Cleaning
 
@@ -46,16 +46,25 @@ ddf <- ddf %>%  dplyr::filter(survey_year>=2016)
 #get rid of survey with weird start time
 ddf <- ddf %>% dplyr::filter(TimeObservationsStarted != 16.7167)
 
+#get rid of no observations rows
+ddf <- ddf %>% dplyr::filter(NoObservations != "NoObs" | is.na(NoObservations))
+
+#take out routes only run twice or less in 10 years
+ddf <- ddf %>% dplyr::filter(RouteIdentifier != "NBMBW35", RouteIdentifier != "NBMBW52", RouteIdentifier != "NBMBW65", RouteIdentifier != "NBMBW75",  RouteIdentifier != "NBMBW79", RouteIdentifier != "NBMBW80", RouteIdentifier != "NBMBW97", RouteIdentifier != "NBMBW60", RouteIdentifier != "NBMBW68")
+
+#take out Black-capped Chickadee because not enough detections
+#ddf <- ddf %>% dplyr::filter(CommonName != "Black-capped Chickadee")
+
 
 #retain only the columns that will be useful for the analysis
-ddf<-ddf %>% dplyr::select(SurveyAreaIdentifier, RouteIdentifier, ProtocolCode, species_id, CommonName, subnational2_code, survey_year, survey_month, survey_day, TimeObservationsStarted, TimeObservationsEnded, ObservationCount, ObservationDescriptor, ObservationCount2, ObservationDescriptor2, ObservationCount3, ObservationDescriptor3, ObservationCount4, ObservationDescriptor4, 
+ddf<-ddf %>% dplyr::select(SurveyAreaIdentifier, RouteIdentifier, ProtocolCode, species_id, CommonName, subnational2_code, survey_year, survey_month, survey_day, TimeObservationsStarted, TimeObservationsEnded, ObservationCount, ObservationDescriptor, ObservationCount2, ObservationDescriptor2, ObservationCount3, ObservationDescriptor3, ObservationCount4, ObservationDescriptor4,
                     ObservationCount5, ObservationDescriptor5, ObservationCount6, ObservationDescriptor6, ObservationCount7, ObservationDescriptor7, ObservationCount8, ObservationDescriptor8,  ObservationCount9, ObservationDescriptor9, EffortMeasurement1, EffortUnits1, EffortMeasurement2, EffortUnits2, EffortMeasurement3, EffortUnits3, EffortMeasurement4, EffortUnits4, CollectorNumber, DecimalLatitude, DecimalLongitude, AllSpeciesReported)
 
 
-ddf_BITH <- subset(ddf, ddf$CommonName == "Bicknell's Thrush")
-ddf_BITH25 <- subset(ddf_BITH, ddf_BITH$survey_year == 2025)
-write.csv(ddf_BITH25, "BITH_2025.csv")
-write.csv(ddf_BITH, "BITH_allyears.csv")
+#ddf_BITH <- subset(ddf, ddf$CommonName == "Bicknell's Thrush")
+#ddf_BITH25 <- subset(ddf_BITH, ddf_BITH$survey_year == 2025)
+#write.csv(ddf_BITH25, "BITH_2025.csv")
+#write.csv(ddf_BITH, "BITH_allyears.csv")
   
 #create doy field
 ddf<-ddf %>% format_dates()
@@ -112,8 +121,7 @@ sum_sp<-pivot_wider(
   values_from = CountTot      # Column containing values to fill
 )
 
-write.csv(sum_sp, "TotalCountSpeciesPerYear25_3.csv")
-
+write.csv(sum_sp, "TotalCountSpeciesPerYear25_31Oct_routesrm.csv")
 ggplot(data = sum_sp1)+ 
   geom_point(aes(x = survey_year, y = CountTot))
 
@@ -136,7 +144,7 @@ labs(
   theme(
     legend.position = "none" # The legend is redundant because of the facet titles
   )
-ggsave("Total Count per Year by Species.pdf", width = 11, height = 8.5, units ="in")
+ggsave("Total Count per Year by Species_31Oct_routesrm.pdf", width = 11, height = 8.5, units ="in")
 
 
 # Create the box and whisker plot
@@ -157,22 +165,22 @@ ggplot(ddf, aes(x = as.factor(survey_year), y = ObservationCount, fill = CommonN
 
 
 #more basic plot
-sum_sp1$CountTot <- as.numeric(sum_sp1$CountTot)
-sum_sp1$CommonName <- as.factor(sum_sp1$CommonName)
+#sum_sp1$CountTot <- as.numeric(sum_sp1$CountTot)
+#sum_sp1$CommonName <- as.factor(sum_sp1$CommonName)
 
 
-png("Detections by species and year.png")
+#png("Detections by species and year_31Oct.png")
 #par(mfrow = c(2,5))
-plot(CountTot ~ survey_year ,data=sum_sp1, type="p",col = CommonName, ylim=c(0,550),lwd=2,ylab="Number of Individuals Detected",las=2,xlab="",main="Total Individuals Detected by Species and Year",bty="l", xaxt = "n")
-axis(1, at=seq(2016,2025,by = 1), las = 2)
+#plot(CountTot ~ survey_year ,data=sum_sp1, type="p",col = CommonName, ylim=c(0,550),lwd=2,ylab="Number of Individuals Detected",las=2,xlab="",main="Total Individuals Detected by Species and Year",bty="l", xaxt = "n")
+#axis(1, at=seq(2016,2025,by = 1), las = 2)
 
 #points(CountTot ~ CommonName, pch=20,col= survey_year,data=sum_sp1)
 #lines(CountTot~survey_year, type = "b", col = CommonName, data = sum_sp1)
-dev.off()
+#dev.off()
 
 #make year continuous
 is.numeric(ddf$survey_year)
-ddf$survey_year <- as.numeric(ddf$survey_year)
+#ddf$survey_year <- as.numeric(ddf$survey_year)
 
 #Route level Effort
 #Determine the number of stops per route to see if we need to effort correct
@@ -205,6 +213,7 @@ results <- data.frame(Group = integer(),
 
 
 ddf<-ddf %>% filter(!is.na(CommonName))
+ddf<-ddf %>% filter(CommonName != "North American Red Squirrel", CommonName != "Black-capped Chickadee", CommonName != "Boreal Chickadee", CommonName != "Fox Sparrow")
 sp_ids<-unique(ddf$CommonName)
 
 
@@ -256,20 +265,19 @@ for(m in 1:length(sp_ids)) {
   )
 
 
-  if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")){
-    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
+  if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Yellow-bellied Flycatcher")){
+    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom2())
   }
 
  
-   if(sp_ids[m] %in% c("Blackpoll Warbler", "Yellow-bellied Flycatcher")){
-  GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
+   if(sp_ids[m] %in% c("Boreal Chickadee", "Fox Sparrow", "Blackpoll Warbler", "White-throated Sparrow", "Swainson's Thrush")){
+  GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois())
    }
   
   if(sp_ids[m] == "Winter Wren"){
-    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + scalesquirrel + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())               
+    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + scalesquirrel + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois())
   }
 
- 
   #diagnostic problems with both GLM4 and GLM5. QQ plot and Levene okay
   #sp_ids<-c("Boreal Chickadee","Swainson's Thrush")
   
@@ -345,10 +353,6 @@ for(m in 1:length(sp_ids)) {
 
 summary(GLM)
 
-
-
-
-
 ##################################
 
 ####Red Squirrel vs Winter Wren###
@@ -387,9 +391,7 @@ abline(lm(total_counts_RS$total_RS ~ total_counts_RS$total_WW), col="red"))
 
 # Add a legend
 legend("topright", legend = unique(total_counts_RS$survey_year), 
-       col = colors, pch = 19, cex = 0.4, title = "Year")
-
-
+       col = colors, pch = 19, cex = 0.3, title = "Year")
 
 
 ###Bird Species at year lag compared to Red Squirrel###
