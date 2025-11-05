@@ -29,10 +29,10 @@ MBW.NC <- nc_data_dl(request_id = 252290, fields_set = "extended", username = "a
                      info = "analysis for HELP data internal")
 #ddf <-MBW.NC
 #write to data folder
-write.csv(MBW.NC, "Data/MBW_2025_31Oct.csv")
+write.csv(MBW.NC, "Data/MBW_2025_Nov4.csv")
 
 #read from data folder
-ddf<-read.csv("Data/MBW_2025_31Oct.csv") #pull in data from file for working with
+ddf<-read.csv("Data/MBW_2025_Nov4.csv") #pull in data from file for working with
 #ddf<-read.csv("Data/MBW_2025_updated_Oct19.csv") #pull in data from file for working with
 
 ##Data Cleaning
@@ -47,10 +47,10 @@ ddf <- ddf %>%  dplyr::filter(survey_year>=2016)
 ddf <- ddf %>% dplyr::filter(TimeObservationsStarted != 16.7167)
 
 #get rid of no observations rows
-ddf <- ddf %>% dplyr::filter(NoObservations != "NoObs" | is.na(NoObservations))
+#ddf <- ddf %>% dplyr::filter(NoObservations != "NoObs" | is.na(NoObservations))
 
 #take out routes only run twice or less in 10 years
-ddf <- ddf %>% dplyr::filter(RouteIdentifier != "NBMBW35", RouteIdentifier != "NBMBW52", RouteIdentifier != "NBMBW65", RouteIdentifier != "NBMBW75",  RouteIdentifier != "NBMBW79", RouteIdentifier != "NBMBW80", RouteIdentifier != "NBMBW97", RouteIdentifier != "NBMBW60", RouteIdentifier != "NBMBW68")
+#ddf <- ddf %>% dplyr::filter(RouteIdentifier != "NBMBW35", RouteIdentifier != "NBMBW52", RouteIdentifier != "NBMBW65", RouteIdentifier != "NBMBW75",  RouteIdentifier != "NBMBW79", RouteIdentifier != "NBMBW80", RouteIdentifier != "NBMBW97", RouteIdentifier != "NBMBW60", RouteIdentifier != "NBMBW68")
 
 #take out Black-capped Chickadee because not enough detections
 #ddf <- ddf %>% dplyr::filter(CommonName != "Black-capped Chickadee")
@@ -121,7 +121,7 @@ sum_sp<-pivot_wider(
   values_from = CountTot      # Column containing values to fill
 )
 
-write.csv(sum_sp, "TotalCountSpeciesPerYear25_31Oct_routesrm.csv")
+write.csv(sum_sp, "TotalCountSpeciesPerYear25_4Nov.csv")
 ggplot(data = sum_sp1)+ 
   geom_point(aes(x = survey_year, y = CountTot))
 
@@ -144,7 +144,7 @@ labs(
   theme(
     legend.position = "none" # The legend is redundant because of the facet titles
   )
-ggsave("Total Count per Year by Species_31Oct_routesrm.pdf", width = 11, height = 8.5, units ="in")
+ggsave("Total Count per Year by Species_4Nov.pdf", width = 11, height = 8.5, units ="in")
 
 
 # Create the box and whisker plot
@@ -213,7 +213,7 @@ results <- data.frame(Group = integer(),
 
 
 ddf<-ddf %>% filter(!is.na(CommonName))
-ddf<-ddf %>% filter(CommonName != "North American Red Squirrel", CommonName != "Black-capped Chickadee", CommonName != "Boreal Chickadee", CommonName != "Fox Sparrow")
+ddf<-ddf %>% filter(CommonName != "North American Red Squirrel", CommonName != "Black-capped Chickadee")
 sp_ids<-unique(ddf$CommonName)
 
 
@@ -265,12 +265,12 @@ for(m in 1:length(sp_ids)) {
     sep = ",",
     row.names = FALSE
   )
-<<<<<<< HEAD
+
 
 
   if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Yellow-bellied Flycatcher")){
     GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom2())
-=======
+}
   
   #Sum the count on a given route
   hist(sp.ddf$RouteTotal)
@@ -280,7 +280,7 @@ for(m in 1:length(sp_ids)) {
   
   if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")){
     GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
->>>>>>> e7884ba9f1c8cb69b695a253e747cfd24c7cc01d
+
   }
 
  
@@ -291,12 +291,8 @@ for(m in 1:length(sp_ids)) {
   if(sp_ids[m] == "Winter Wren"){
     GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + scalesquirrel + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois())
   }
-<<<<<<< HEAD
 
-  #diagnostic problems with both GLM4 and GLM5. QQ plot and Levene okay
-  #sp_ids<-c("Boreal Chickadee","Swainson's Thrush")
-=======
- 
+
   if(sp_ids[m] %in% c("Boreal Chickadee","Swainson's Thrush")){
     GLM <- glmmTMB(RouteTotal ~ scaleyear + ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf,
       ziformula = ~ 1,  # Intercept-only zero-inflation
@@ -304,7 +300,7 @@ for(m in 1:length(sp_ids)) {
     )
     
   }
->>>>>>> e7884ba9f1c8cb69b695a253e747cfd24c7cc01d
+
   
   model_summary <- summary(GLM)
  
