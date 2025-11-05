@@ -192,6 +192,7 @@ all_species_events<-all_species_events %>% left_join(stops, by=c("RouteIdentifie
 all_species_events<-all_species_events %>% left_join(start, by=c("RouteIdentifier", "survey_year"))
 all_species_events<-all_species_events %>% left_join(RS, by=c("survey_year"))
 
+results<-NULL #clear old
 results <- data.frame(Group = integer(),
                       Estimate = numeric(),
                       Std.Error = numeric(),
@@ -204,6 +205,8 @@ results <- data.frame(Group = integer(),
 
 ddf<-ddf %>% filter(!is.na(CommonName))
 sp_ids<-unique(ddf$CommonName)
+
+sp_ids <- sp_ids[!sp_ids %in% c("Black-capped Chickadee")]
 
 for(m in 1:length(sp_ids)) {
   
@@ -233,7 +236,7 @@ for(m in 1:length(sp_ids)) {
   sp.ddf$scaleyear<-scale(sp.ddf$survey_year, center = TRUE, scale = TRUE)
   sp.ddf$scalesquirrel<-scale(sp.ddf$RedSquirrel, center = TRUE, scale = TRUE)
   
-  
+ 
   #remove routes where a species was never detected, or if the route was sampled in < 2 years
   route_remove<-sp.ddf %>% group_by(RouteIdentifier) %>% summarise(keep_route = sum(RouteTotal, na.rm = TRUE), samples = length(RouteTotal)) %>% filter(keep_route>0 & samples >2) %>% dplyr::select(-keep_route, -samples)
   sp.ddf<-left_join(route_remove, sp.ddf, by="RouteIdentifier")
@@ -255,12 +258,11 @@ for(m in 1:length(sp_ids)) {
   )
   
   #Sum the count on a given route
-  hist(sp.ddf$RouteTotal)
   png(filename = file.path(output_dir, paste0(sp_ids[m], "RouteTotal_histogram.png")))
   hist(sp.ddf$RouteTotal)
   dev.off()
   
-  if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")){
+  if(sp_ids[m] %in% c("Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")){
     GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
   }
  
@@ -272,11 +274,17 @@ for(m in 1:length(sp_ids)) {
     GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + scalesquirrel + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())               
   }
  
-  if(sp_ids[m] %in% c("Boreal Chickadee","Swainson's Thrush")){
+  if(sp_ids[m] %in% c("Boreal Chickadee", "Bicknell's Thrush")){
     GLM <- glmmTMB(RouteTotal ~ scaleyear + ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf,
       ziformula = ~ 1,  # Intercept-only zero-inflation
       family = genpois(link = "log")
     )
+    
+    if(sp_ids[m] %in% c("Swainson's Thrush")){
+      GLM <- glmmTMB(RouteTotal ~ scaleyear + ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf,
+        family = gaussian(link = "identity")  # Use normal distribution
+      )
+    }
     
   }
   
@@ -341,10 +349,13 @@ for(m in 1:length(sp_ids)) {
     
   ))
 
-  file_path2 <- file.path(output_dir, paste0(sp_ids[m], "_ModelResults.csv"))
-  write.table(results, file = file_path2, row.names = FALSE, sep = ",")
-
+  
 }
+
+file_path2 <- file.path(output_dir, paste0("ModelResults.csv"))
+write.table(results, file = file_path2, row.names = FALSE, sep = ",")
+
+
 
 # This closes the loop
 
