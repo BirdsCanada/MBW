@@ -335,6 +335,18 @@ for(m in 1:length(sp_ids)) {
   
   # Percent change per year
   annual_percent_change <- (annual_change_factor - 1) * 100
+  
+  #confidence intervals
+  alpha <- 0.05
+  z_crit <- qnorm(1 - alpha/2)
+  
+  # Upper and lower confidence interval for the scaled coefficient
+  ci_lower_scaled <- estimate - z_crit * std_error
+  ci_upper_scaled <- estimate + z_crit * std_error
+  
+  #Convert back to standard scale
+  ci_lower_year <- ci_lower_scaled / sd_year
+  ci_upper_year <- ci_upper_scaled / sd_year
 
   # Append results to the results data frame
   results <- rbind(results, data.frame(
