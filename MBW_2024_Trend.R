@@ -32,8 +32,8 @@ MBW.NC <- nc_data_dl(request_id = 252290, fields_set = "extended", username = "a
 write.csv(MBW.NC, "Data/MBW_2025_Nov4.csv")
 
 #read from data folder
+#ddf<-read.csv("Data/MBW_2025_Nov4_withTotalBITH_NB.csv") #pull in data from file for working with
 ddf<-read.csv("Data/MBW_2025_Nov4.csv") #pull in data from file for working with
-#ddf<-read.csv("Data/MBW_2025_updated_Oct19.csv") #pull in data from file for working with
 
 ##Data Cleaning
 
@@ -51,9 +51,6 @@ ddf <- ddf %>% dplyr::filter(TimeObservationsStarted != 16.7167)
 
 #take out routes only run twice or less in 10 years
 #ddf <- ddf %>% dplyr::filter(RouteIdentifier != "NBMBW35", RouteIdentifier != "NBMBW52", RouteIdentifier != "NBMBW65", RouteIdentifier != "NBMBW75",  RouteIdentifier != "NBMBW79", RouteIdentifier != "NBMBW80", RouteIdentifier != "NBMBW97", RouteIdentifier != "NBMBW60", RouteIdentifier != "NBMBW68")
-
-#take out Black-capped Chickadee because not enough detections
-#ddf <- ddf %>% dplyr::filter(CommonName != "Black-capped Chickadee")
 
 
 #retain only the columns that will be useful for the analysis
@@ -189,7 +186,7 @@ stops<-ddf %>% group_by(RouteIdentifier, survey_year) %>% summarise(nstop = n_di
 #Add in route start time with slice_min
 start<-ddf %>% dplyr::select(RouteIdentifier, survey_year, TimeObservationsStarted) %>% group_by(RouteIdentifier, survey_year) %>% slice_min(TimeObservationsStarted) %>% distinct()
 
-##Add Red Squire for Winter Wren
+##Add Red Squirrel for Winter Wren
 RS<-sum_sp1 %>% filter(CommonName=="North American Red Squirrel") %>% rename( RedSquirrel = CountTot ) %>% dplyr::select(-CommonName)
 
 #Route level Events
@@ -201,6 +198,7 @@ all_species_events<-all_species_events %>% left_join(stops, by=c("RouteIdentifie
 all_species_events<-all_species_events %>% left_join(start, by=c("RouteIdentifier", "survey_year"))
 all_species_events<-all_species_events %>% left_join(RS, by=c("survey_year"))
 
+results<-NULL #clear old
 results <- data.frame(Group = integer(),
                       Estimate = numeric(),
                       Std.Error = numeric(),
@@ -213,13 +211,16 @@ results <- data.frame(Group = integer(),
 
 
 ddf<-ddf %>% filter(!is.na(CommonName))
-ddf<-ddf %>% filter(CommonName != "North American Red Squirrel", CommonName != "Black-capped Chickadee")
+#ddf<-ddf %>% filter(CommonName != "North American Red Squirrel", CommonName != "Black-capped Chickadee")
 sp_ids<-unique(ddf$CommonName)
+
+
+sp_ids <- sp_ids[!sp_ids %in% c("Black-capped Chickadee", "North American Red Squirrel")]
 
 
 for(m in 1:length(sp_ids)) {
   
-  #m<-1 #for testing
+  #m<-3 #for testing
   
   sp.ddf<-NULL #clear old dataframe
   sp.ddf<-ddf %>% filter(CommonName==sp_ids[m]) #this will cycle through each species in sp.ids. For testing you can manually set m to 
@@ -245,7 +246,7 @@ for(m in 1:length(sp_ids)) {
   sp.ddf$scaleyear<-scale(sp.ddf$survey_year, center = TRUE, scale = TRUE)
   sp.ddf$scalesquirrel<-scale(sp.ddf$RedSquirrel, center = TRUE, scale = TRUE)
   
-  
+ 
   #remove routes where a species was never detected, or if the route was sampled in < 2 years
   route_remove<-sp.ddf %>% group_by(RouteIdentifier) %>% summarise(keep_route = sum(RouteTotal, na.rm = TRUE), samples = length(RouteTotal)) %>% filter(keep_route>0 & samples >2) %>% dplyr::select(-keep_route, -samples)
   sp.ddf<-left_join(route_remove, sp.ddf, by="RouteIdentifier")
@@ -266,39 +267,61 @@ for(m in 1:length(sp_ids)) {
     row.names = FALSE
   )
 
-
-
-  if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Yellow-bellied Flycatcher")){
-    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom2())
-}
   
   #Sum the count on a given route
-  hist(sp.ddf$RouteTotal)
   png(filename = file.path(output_dir, paste0(sp_ids[m], "RouteTotal_histogram.png")))
   hist(sp.ddf$RouteTotal)
   dev.off()
   
-  if(sp_ids[m] %in% c("Bicknell's Thrush", "Hermit Thrush", "Fox Sparrow", "White-throated Sparrow")){
-    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
 
+  
+  if(sp_ids[m] %in% c("Hermit Thrush", "Fox Sparrow")){
+    
+    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = nbinom1())
+    
   }
 
  
-   if(sp_ids[m] %in% c("Boreal Chickadee", "Fox Sparrow", "Blackpoll Warbler", "White-throated Sparrow", "Swainson's Thrush")){
-  GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois())
-   }
+  if(sp_ids[m] %in% c("White-throated Sparrow")){
+    
+    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
+    
+  }
+  
+  
+  if(sp_ids[m] %in% c("Blackpoll Warbler")){
+    
+    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
+    
+  }
   
   if(sp_ids[m] == "Winter Wren"){
-    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + scalesquirrel + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois())
+    
+    GLM<- glmmTMB(RouteTotal ~ scaleyear +  ProtocolCode + scalesquirrel + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf, family = genpois(link = "log"))               
+    
   }
 
 
-  if(sp_ids[m] %in% c("Boreal Chickadee","Swainson's Thrush")){
-    GLM <- glmmTMB(RouteTotal ~ scaleyear + ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf,
-      ziformula = ~ 1,  # Intercept-only zero-inflation
-      family = genpois(link = "log")
-    )
+ 
+  if(sp_ids[m] %in% c("Bicknell's Thrush", "Yellow-bellied Flycatcher", "Boreal Chickadee")){
     
+    GLM <- glmmTMB(RouteTotal ~ scaleyear + ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf,
+                   
+                   ziformula = ~ 1,  # Intercept-only zero-inflation
+                   
+                   family = genpois(link = "log"))
+                   
+  }  
+    
+    if(sp_ids[m] %in% c("Swainson's Thrush")){
+      
+      
+      GLM <- glmmTMB(RouteTotal ~ scaleyear + ProtocolCode + (1 | RouteIdentifierFact) + offset(log(nstop)), data = sp.ddf,
+                     
+                     
+                     family = gaussian(link = "identity"))  # Use normal distribution
+                     
+                     
   }
 
   
@@ -365,14 +388,15 @@ for(m in 1:length(sp_ids)) {
     
   ))
 
-  file_path2 <- file.path(output_dir, paste0(sp_ids[m], "_ModelResults.csv"))
-  write.table(results, file = file_path2, row.names = FALSE, sep = ",")
-
+  
 }
 
-# This closes the loop
+file_path2 <- file.path(output_dir, paste0("ModelResults.csv"))
+write.table(results, file = file_path2, row.names = FALSE, sep = ",")
 
-summary(GLM)
+
+
+# This closes the loop
 
 ##################################
 
